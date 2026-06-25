@@ -24,12 +24,13 @@ type Deps struct {
 	Auth0Audience  string
 }
 
-// New constructs the application mux with all feature routes registered.
-func New(deps Deps) *http.ServeMux {
+// New constructs the application handler with all feature routes registered under /api.
+// Go's ServeMux automatically redirects /api → /api/ so both forms work.
+func New(deps Deps) http.Handler {
 	mux := http.NewServeMux()
 	auth := middleware.RequireAuth(deps.JWKS, deps.Auth0IssuerURL, deps.Auth0Audience)
 
-	// Root hello-world — keeps the Vercel deploy smoke test working.
+	// Root hello-world.
 	mux.HandleFunc("GET /{$}", root)
 
 	// Public routes (no auth).
@@ -39,7 +40,11 @@ func New(deps Deps) *http.ServeMux {
 	movie.NewHandler(movie.NewService(movie.NewRepository(deps.DB))).RegisterRoutes(mux, auth)
 	tv.NewHandler(tv.NewService(tv.NewRepository(deps.DB))).RegisterRoutes(mux, auth)
 
-	return mux
+	// Mount the inner mux under /api/. StripPrefix removes /api before the inner
+	// mux sees the path, so features register routes without the base prefix.
+	outer := http.NewServeMux()
+	outer.Handle("/api/", http.StripPrefix("/api", mux))
+	return outer
 }
 
 func root(w http.ResponseWriter, r *http.Request) {
