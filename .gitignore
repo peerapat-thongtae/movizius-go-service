@@ -1,0 +1,15 @@
+# Binaries
+*.exe
+*.out
+/bin/
+
+# Go
+vendor/
+*.test
+
+# Vercel
+.vercel
+
+# Env
+.env
+.env.local
