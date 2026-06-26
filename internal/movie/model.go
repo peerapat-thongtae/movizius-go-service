@@ -8,7 +8,7 @@ import (
 
 // Movie represents a movie document in the movies collection (TMDB metadata cache).
 type Movie struct {
-	ID                  primitive.ObjectID `bson:"_id,omitempty"                json:"_id,omitempty"`
+	ID                  primitive.ObjectID `bson:"_id,omitempty"                json:"-"`
 	MovieID             int64              `bson:"id"                           json:"id"`
 	Title               string             `bson:"title"                        json:"title"`
 	OriginalTitle       string             `bson:"original_title"               json:"original_title"`
@@ -27,17 +27,17 @@ type Movie struct {
 	VoteAverage         *float64           `bson:"vote_average"                 json:"vote_average"`
 	VoteCount           *int64             `bson:"vote_count"                   json:"vote_count"`
 	WatchProviders      []any              `bson:"watch_providers"              json:"watch_providers"`
-	UpdatedAt           time.Time          `bson:"updated_at"                   json:"updated_at"`
+	UpdatedAt           time.Time          `bson:"updated_at"                   json:"-"`
 }
 
 // MovieUser represents a user's tracking record for a movie in the movie_user collection.
 type MovieUser struct {
-	ID            primitive.ObjectID `bson:"_id,omitempty"            json:"_id,omitempty"`
+	ID            primitive.ObjectID `bson:"_id,omitempty"            json:"-"`
 	MovieID       int64              `bson:"id"                       json:"id"`
 	UserID        string             `bson:"user_id"                  json:"user_id"`
 	MediaType     string             `bson:"media_type"               json:"media_type"`
 	WatchlistedAt time.Time          `bson:"watchlisted_at"           json:"watchlisted_at"`
 	WatchedAt     *time.Time         `bson:"watched_at,omitempty"     json:"watched_at,omitempty"`
-	UpdatedAt     time.Time          `bson:"updated_at"               json:"updated_at"`
-	AccountStatus string             `bson:"account_status,omitempty" json:"account_status,omitempty"`
+	UpdatedAt     time.Time          `bson:"updated_at"               json:"-"`
+	AccountStatus *string            `bson:"account_status,omitempty" json:"account_status"`
 }

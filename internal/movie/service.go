@@ -3,6 +3,7 @@ package movie
 import (
 	"context"
 	"fmt"
+	"time"
 )
 
 // MovieService holds the business logic for the movie feature.
@@ -21,5 +22,17 @@ func (s *MovieService) GetStates(ctx context.Context, userID string) ([]MovieUse
 	if err != nil {
 		return nil, fmt.Errorf("movie service: get states: %w", err)
 	}
+	for i := range states {
+		states[i].AccountStatus = accountStatus(states[i].WatchedAt)
+	}
 	return states, nil
+}
+
+func accountStatus(watchedAt *time.Time) *string {
+	if watchedAt != nil {
+		s := "watched"
+		return &s
+	}
+	s := "watchlist"
+	return &s
 }
