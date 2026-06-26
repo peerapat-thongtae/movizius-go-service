@@ -49,10 +49,7 @@ type TVState struct {
 	TVID             int64            `bson:"id"                  json:"id"`
 	UserID           string           `bson:"user_id"             json:"user_id"`
 	Name             string           `bson:"name"                json:"name"`
-	MediaType        string           `bson:"media_type"          json:"media_type"`
 	IsAnime          bool             `bson:"is_anime"            json:"is_anime"`
-	VoteAverage      *float64         `bson:"vote_average"        json:"vote_average"`
-	VoteCount        *int64           `bson:"vote_count"          json:"vote_count"`
 	NumberOfEpisodes *int             `bson:"number_of_episodes"  json:"number_of_episodes"`
 	NumberOfSeasons  *int             `bson:"number_of_seasons"   json:"number_of_seasons"`
 	EpisodeWatched   []EpisodeWatched `bson:"episode_watched"     json:"episode_watched"`
@@ -62,9 +59,6 @@ type TVState struct {
 	AccountStatus    string           `bson:"account_status"      json:"account_status"`
 	LatestState      *time.Time       `bson:"latest_state"        json:"latest_state,omitempty"`
 	MaxWatchedEp     *EpisodeWatched  `bson:"max_watched_ep"      json:"max_watched_ep,omitempty"`
-	NextEpisodeToAir any              `bson:"next_episode_to_air" json:"next_episode_to_air"`
-	LastEpisodeToAir any              `bson:"last_episode_to_air" json:"last_episode_to_air"`
-	Seasons          []any            `bson:"seasons"             json:"seasons"`
 }
 
 // TVUser represents a user's tracking record for a TV series in the tv_user collection.
