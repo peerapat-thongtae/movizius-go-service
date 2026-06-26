@@ -15,9 +15,9 @@ func NewService(repo TVRepository) *TVService {
 	return &TVService{repo: repo}
 }
 
-// GetStates returns all TV tracking records for the given user.
-func (s *TVService) GetStates(ctx context.Context, userID string) ([]TVUser, error) {
-	states, err := s.repo.FindByUserID(ctx, userID)
+// GetStates returns aggregated TV tracking records for the given user.
+func (s *TVService) GetStates(ctx context.Context, userID string) ([]TVState, error) {
+	states, err := s.repo.GetStatesByUserID(ctx, userID)
 	if err != nil {
 		return nil, fmt.Errorf("tv service: get states: %w", err)
 	}

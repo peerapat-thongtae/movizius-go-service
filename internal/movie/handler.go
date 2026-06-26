@@ -37,5 +37,5 @@ func (h *Handler) GetStates(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	response.Success(w, http.StatusOK, states)
+	response.Paginated(w, http.StatusOK, states, 1, 1)
 }
