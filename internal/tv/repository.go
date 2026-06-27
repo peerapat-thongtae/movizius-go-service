@@ -50,7 +50,7 @@ func (r *mongoTVRepository) DiscoverIDs(ctx context.Context, userID string, q Di
 		coll     *mongo.Collection
 		pipeline bson.A
 	)
-	if q.WithAccountStatus != "" && userID != "" {
+	if (len(q.WithAccountStatus) > 0 || len(q.WithoutAccountStatus) > 0) && userID != "" {
 		coll = r.db.Collection("tv_user")
 		pipeline = buildAccountStatusPipeline(userID, q)
 	} else {
@@ -184,7 +184,7 @@ func buildAccountStatusPipeline(userID string, q DiscoverQuery) bson.A {
 		}}},
 
 		// 5. Filter to requested status before promoting tv fields.
-		bson.D{{Key: "$match", Value: bson.D{{Key: "_account_status", Value: q.WithAccountStatus}}}},
+		bson.D{{Key: "$match", Value: accountStatusMatchCond(q.WithAccountStatus, q.WithoutAccountStatus)}},
 
 		// 6. Promote tv fields to root; preserve user-derived fields.
 		bson.D{{Key: "$replaceRoot", Value: bson.D{
@@ -209,6 +209,18 @@ func buildAccountStatusPipeline(userID string, q DiscoverQuery) bson.A {
 	pipeline = append(pipeline, tvWatchProviderStages(q.WatchRegion, q.WithWatchProviders)...)
 	pipeline = append(pipeline, discoverFacet(skip, pageSize))
 	return pipeline
+}
+
+// accountStatusMatchCond returns a $match filter for _account_status using $in / $nin.
+func accountStatusMatchCond(with, without []string) bson.D {
+	cond := bson.D{}
+	if len(with) > 0 {
+		cond = append(cond, bson.E{Key: "_account_status", Value: bson.D{{Key: "$in", Value: with}}})
+	}
+	if len(without) > 0 {
+		cond = append(cond, bson.E{Key: "_account_status", Value: bson.D{{Key: "$nin", Value: without}}})
+	}
+	return cond
 }
 
 // tvMatchConditions builds $match conditions for fields on the tv collection.

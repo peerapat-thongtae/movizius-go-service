@@ -23,7 +23,8 @@ type DiscoverQuery struct {
 	Softcore             *bool
 	WithWatchProviders   []int64
 	WatchRegion          string
-	WithAccountStatus    string // "watchlist"|"watching"|"wait_next_season"|"watched"
+	WithAccountStatus    []string // "watchlist","watching","wait_next_season","watched"
+	WithoutAccountStatus []string
 	WithNetworks         []int64
 	IsAnime              *bool
 	WithStatus           string
@@ -49,7 +50,8 @@ func discoverQueryFromRequest(r *http.Request) DiscoverQuery {
 		IncludeAdult:         q.Get("include_adult") == "true",
 		WithWatchProviders:   int64ListParam(q.Get("with_watch_providers")),
 		WatchRegion:          strings.ToUpper(q.Get("watch_region")),
-		WithAccountStatus:    q.Get("with_account_status"),
+		WithAccountStatus:    stringListParam(q.Get("with_account_status")),
+		WithoutAccountStatus: stringListParam(q.Get("without_account_status")),
 		WithNetworks:         int64ListParam(q.Get("with_networks")),
 		WithStatus:           q.Get("with_status"),
 		WithType:             q.Get("with_type"),
@@ -110,6 +112,20 @@ func stringParam(s, def string) string {
 		return def
 	}
 	return s
+}
+
+func stringListParam(s string) []string {
+	if s == "" {
+		return nil
+	}
+	parts := strings.Split(s, ",")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		if v := strings.TrimSpace(p); v != "" {
+			out = append(out, v)
+		}
+	}
+	return out
 }
 
 func int64ListParam(s string) []int64 {

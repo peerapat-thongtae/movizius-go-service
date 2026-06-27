@@ -21,9 +21,10 @@ type DiscoverQuery struct {
 	WithOriginalLanguage string
 	IncludeAdult         bool
 	Softcore             *bool
-	WithWatchProviders   []int64
-	WatchRegion          string
-	WithAccountStatus    string
+	WithWatchProviders    []int64
+	WatchRegion           string
+	WithAccountStatus    []string
+	WithoutAccountStatus []string
 }
 
 // discoverQueryFromRequest parses DiscoverQuery from the request's URL query params.
@@ -43,9 +44,10 @@ func discoverQueryFromRequest(r *http.Request) DiscoverQuery {
 		VoteCountGte:         int64Param(q.Get("vote_count.gte"), 0),
 		WithOriginalLanguage: q.Get("with_original_language"),
 		IncludeAdult:         q.Get("include_adult") == "true",
-		WithWatchProviders:   int64ListParam(q.Get("with_watch_providers")),
-		WatchRegion:          strings.ToUpper(q.Get("watch_region")),
-		WithAccountStatus:    q.Get("with_account_status"),
+		WithWatchProviders:    int64ListParam(q.Get("with_watch_providers")),
+		WatchRegion:           strings.ToUpper(q.Get("watch_region")),
+		WithAccountStatus:    stringListParam(q.Get("with_account_status")),
+		WithoutAccountStatus: stringListParam(q.Get("without_account_status")),
 	}
 
 	if raw := q.Get("softcore"); raw != "" {
@@ -98,6 +100,20 @@ func stringParam(s, def string) string {
 		return def
 	}
 	return s
+}
+
+func stringListParam(s string) []string {
+	if s == "" {
+		return nil
+	}
+	parts := strings.Split(s, ",")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		if v := strings.TrimSpace(p); v != "" {
+			out = append(out, v)
+		}
+	}
+	return out
 }
 
 func int64ListParam(s string) []int64 {

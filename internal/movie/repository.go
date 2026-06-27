@@ -49,7 +49,7 @@ func (r *mongoMovieRepository) DiscoverIDs(ctx context.Context, userID string, q
 		coll     *mongo.Collection
 		pipeline bson.A
 	)
-	if q.WithAccountStatus != "" && userID != "" {
+	if (len(q.WithAccountStatus) > 0 || len(q.WithoutAccountStatus) > 0) && userID != "" {
 		coll = r.db.Collection("movie_user")
 		pipeline = buildAccountStatusPipeline(userID, q)
 	} else {
@@ -155,7 +155,7 @@ func buildAccountStatusPipeline(userID string, q DiscoverQuery) bson.A {
 		}}},
 
 		// 3. Filter to requested status before the join — keeps the join set tiny.
-		bson.D{{Key: "$match", Value: bson.D{{Key: "_account_status", Value: q.WithAccountStatus}}}},
+		bson.D{{Key: "$match", Value: accountStatusMatchCond(q.WithAccountStatus, q.WithoutAccountStatus)}},
 
 		// 4. Join movie details (only for the filtered set, not the whole collection).
 		bson.D{{Key: "$lookup", Value: bson.D{
@@ -188,6 +188,18 @@ func buildAccountStatusPipeline(userID string, q DiscoverQuery) bson.A {
 	pipeline = append(pipeline, watchProviderStages(q.WatchRegion, q.WithWatchProviders)...)
 	pipeline = append(pipeline, discoverFacet(skip, pageSize))
 	return pipeline
+}
+
+// accountStatusMatchCond returns a $match filter for _account_status using $in / $nin.
+func accountStatusMatchCond(with, without []string) bson.D {
+	cond := bson.D{}
+	if len(with) > 0 {
+		cond = append(cond, bson.E{Key: "_account_status", Value: bson.D{{Key: "$in", Value: with}}})
+	}
+	if len(without) > 0 {
+		cond = append(cond, bson.E{Key: "_account_status", Value: bson.D{{Key: "$nin", Value: without}}})
+	}
+	return cond
 }
 
 // movieMatchConditions builds $match conditions for fields on the movie collection.
