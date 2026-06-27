@@ -46,7 +46,7 @@ type TVResponse struct {
 	MediaType           string              `bson:"media_type"             json:"media_type"`
 	ImdbID              string              `bson:"imdb_id"                json:"imdb_id"`
 	IsAnime             bool                `bson:"is_anime"               json:"is_anime"`
-	WatchProviders      *WatchProviders     `bson:"watch_providers"        json:"watch_providers"`
+	WatchProviders      *WatchProviders     `bson:"watch_providers"        json:"watch/providers"`
 	UpdatedAt           time.Time           `bson:"updated_at"             json:"-"`
 }
 

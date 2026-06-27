@@ -11,6 +11,7 @@ import (
 	"github.com/peera/movizius-go-service/pkg/config"
 	"github.com/peera/movizius-go-service/pkg/database"
 	pkgfirebase "github.com/peera/movizius-go-service/pkg/firebase"
+	"github.com/peera/movizius-go-service/pkg/tmdb"
 )
 
 // app is built once per cold start and reused across warm invocations.
@@ -44,6 +45,7 @@ func init() {
 		Auth0IssuerURL: cfg.Auth0IssuerURL,
 		Auth0Audience:  cfg.Auth0Audience,
 		Firebase:       firebaseApp,
+		TMDB:           tmdb.New(cfg.TMDBAccessToken),
 	})
 }
 

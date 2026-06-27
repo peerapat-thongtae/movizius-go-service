@@ -1,5 +1,18 @@
 basePath: /api
 definitions:
+  github_com_peera_movizius-go-service_internal_shared_response.Page-internal_movie_MovieResponse:
+    properties:
+      page:
+        type: integer
+      results:
+        items:
+          $ref: '#/definitions/internal_movie.MovieResponse'
+        type: array
+      total_pages:
+        type: integer
+      total_results:
+        type: integer
+    type: object
   github_com_peera_movizius-go-service_internal_shared_response.Page-internal_movie_MovieUser:
     properties:
       page:
@@ -7,6 +20,19 @@ definitions:
       results:
         items:
           $ref: '#/definitions/internal_movie.MovieUser'
+        type: array
+      total_pages:
+        type: integer
+      total_results:
+        type: integer
+    type: object
+  github_com_peera_movizius-go-service_internal_shared_response.Page-internal_tv_TVResponse:
+    properties:
+      page:
+        type: integer
+      results:
+        items:
+          $ref: '#/definitions/internal_tv.TVResponse'
         type: array
       total_pages:
         type: integer
@@ -31,6 +57,175 @@ definitions:
       status:
         type: string
     type: object
+  internal_movie.Cast:
+    properties:
+      adult:
+        type: boolean
+      cast_id:
+        type: integer
+      character:
+        type: string
+      credit_id:
+        type: string
+      department:
+        type: string
+      gender:
+        type: integer
+      id:
+        type: integer
+      job:
+        type: string
+      known_for_department:
+        type: string
+      name:
+        type: string
+      order:
+        type: integer
+      original_name:
+        type: string
+      popularity:
+        type: number
+      profile_path:
+        type: string
+    type: object
+  internal_movie.Casts:
+    properties:
+      cast:
+        items:
+          $ref: '#/definitions/internal_movie.Cast'
+        type: array
+      crew:
+        items:
+          $ref: '#/definitions/internal_movie.Cast'
+        type: array
+    type: object
+  internal_movie.Collection:
+    properties:
+      backdrop_path:
+        type: string
+      id:
+        type: integer
+      name:
+        type: string
+      poster_path:
+        type: string
+    type: object
+  internal_movie.ExternalIDs:
+    properties:
+      facebook_id:
+        type: string
+      imdb_id:
+        type: string
+      instagram_id:
+        type: string
+      twitter_id:
+        type: string
+      wikidata_id:
+        type: string
+    type: object
+  internal_movie.Flatrate:
+    properties:
+      display_priority:
+        type: integer
+      logo_path:
+        type: string
+      provider_id:
+        type: integer
+      provider_name:
+        type: string
+    type: object
+  internal_movie.Genre:
+    properties:
+      id:
+        type: integer
+      name:
+        type: string
+    type: object
+  internal_movie.MovieResponse:
+    properties:
+      adult:
+        type: boolean
+      backdrop_path:
+        type: string
+      belongs_to_collection:
+        $ref: '#/definitions/internal_movie.Collection'
+      budget:
+        type: integer
+      casts:
+        $ref: '#/definitions/internal_movie.Casts'
+      external_ids:
+        $ref: '#/definitions/internal_movie.ExternalIDs'
+      genres:
+        items:
+          $ref: '#/definitions/internal_movie.Genre'
+        type: array
+      homepage:
+        type: string
+      id:
+        type: integer
+      imdb_id:
+        type: string
+      media_type:
+        type: string
+      origin_country:
+        items:
+          type: string
+        type: array
+      original_language:
+        type: string
+      original_title:
+        type: string
+      overview:
+        type: string
+      popularity:
+        type: number
+      poster_path:
+        type: string
+      production_companies:
+        items:
+          $ref: '#/definitions/internal_movie.ProductionCompany'
+        type: array
+      production_countries:
+        items:
+          $ref: '#/definitions/internal_movie.ProductionCountry'
+        type: array
+      release_date:
+        type: string
+      release_dates:
+        $ref: '#/definitions/internal_movie.ReleaseDates'
+      release_dates_th:
+        items:
+          $ref: '#/definitions/internal_movie.ReleaseDate'
+        type: array
+      revenue:
+        type: integer
+      runtime:
+        type: integer
+      softcore:
+        type: boolean
+      spoken_languages:
+        items:
+          $ref: '#/definitions/internal_movie.SpokenLanguage'
+        type: array
+      status:
+        type: string
+      tagline:
+        type: string
+      title:
+        type: string
+      video:
+        type: boolean
+      videos:
+        $ref: '#/definitions/internal_movie.Videos'
+      vote_average:
+        type: number
+      vote_count:
+        type: integer
+      watch/providers:
+        allOf:
+        - $ref: '#/definitions/internal_movie.WatchProviders'
+        description: JSON key is "watch/providers" per TMDB's append_to_response convention.
+    type: object
   internal_movie.MovieUser:
     properties:
       account_status:
@@ -45,6 +240,128 @@ definitions:
         type: string
       watchlisted_at:
         type: string
+    type: object
+  internal_movie.ProductionCompany:
+    properties:
+      id:
+        type: integer
+      logo_path:
+        type: string
+      name:
+        type: string
+      origin_country:
+        type: string
+    type: object
+  internal_movie.ProductionCountry:
+    properties:
+      iso_3166_1:
+        type: string
+      name:
+        type: string
+    type: object
+  internal_movie.ReleaseDate:
+    properties:
+      certification:
+        type: string
+      descriptors:
+        items:
+          type: string
+        type: array
+      iso_639_1:
+        type: string
+      note:
+        type: string
+      release_date:
+        type: string
+      type:
+        type: integer
+    type: object
+  internal_movie.ReleaseDates:
+    properties:
+      results:
+        items:
+          $ref: '#/definitions/internal_movie.ReleaseDatesResult'
+        type: array
+    type: object
+  internal_movie.ReleaseDatesResult:
+    properties:
+      iso_3166_1:
+        type: string
+      release_dates:
+        items:
+          $ref: '#/definitions/internal_movie.ReleaseDate'
+        type: array
+    type: object
+  internal_movie.SpokenLanguage:
+    properties:
+      english_name:
+        type: string
+      iso_639_1:
+        type: string
+      name:
+        type: string
+    type: object
+  internal_movie.VideoResult:
+    properties:
+      id:
+        type: string
+      iso_639_1:
+        type: string
+      iso_3166_1:
+        type: string
+      key:
+        type: string
+      name:
+        type: string
+      official:
+        type: boolean
+      published_at:
+        type: string
+      site:
+        type: string
+      size:
+        type: integer
+      type:
+        type: string
+    type: object
+  internal_movie.Videos:
+    properties:
+      results:
+        items:
+          $ref: '#/definitions/internal_movie.VideoResult'
+        type: array
+    type: object
+  internal_movie.WatchProviderCountry:
+    properties:
+      ads:
+        items:
+          $ref: '#/definitions/internal_movie.Flatrate'
+        type: array
+      buy:
+        items:
+          $ref: '#/definitions/internal_movie.Flatrate'
+        type: array
+      flatrate:
+        items:
+          $ref: '#/definitions/internal_movie.Flatrate'
+        type: array
+      free:
+        items:
+          $ref: '#/definitions/internal_movie.Flatrate'
+        type: array
+      link:
+        type: string
+      rent:
+        items:
+          $ref: '#/definitions/internal_movie.Flatrate'
+        type: array
+    type: object
+  internal_movie.WatchProviders:
+    properties:
+      results:
+        additionalProperties:
+          $ref: '#/definitions/internal_movie.WatchProviderCountry'
+        type: object
     type: object
   internal_notification.RegisterDeviceRequest:
     properties:
@@ -62,6 +379,90 @@ definitions:
       total:
         type: integer
     type: object
+  internal_tv.CastMember:
+    properties:
+      adult:
+        type: boolean
+      character:
+        type: string
+      credit_id:
+        type: string
+      department:
+        type: string
+      gender:
+        type: integer
+      id:
+        type: integer
+      job:
+        type: string
+      known_for_department:
+        type: string
+      name:
+        type: string
+      order:
+        type: integer
+      original_name:
+        type: string
+      popularity:
+        type: number
+      profile_path:
+        type: string
+    type: object
+  internal_tv.CreatedBy:
+    properties:
+      credit_id:
+        type: string
+      gender:
+        type: integer
+      id:
+        type: integer
+      name:
+        type: string
+      original_name:
+        type: string
+      profile_path:
+        type: string
+    type: object
+  internal_tv.Credits:
+    properties:
+      cast:
+        items:
+          $ref: '#/definitions/internal_tv.CastMember'
+        type: array
+      crew:
+        items:
+          $ref: '#/definitions/internal_tv.CastMember'
+        type: array
+    type: object
+  internal_tv.Episode:
+    properties:
+      air_date:
+        type: string
+      episode_number:
+        type: integer
+      episode_type:
+        type: string
+      id:
+        type: integer
+      name:
+        type: string
+      overview:
+        type: string
+      production_code:
+        type: string
+      runtime:
+        type: integer
+      season_number:
+        type: integer
+      show_id:
+        type: integer
+      still_path:
+        type: string
+      vote_average:
+        type: number
+      vote_count:
+        type: integer
+    type: object
   internal_tv.EpisodeWatched:
     properties:
       episode_id:
@@ -72,6 +473,205 @@ definitions:
         type: integer
       watched_at:
         type: string
+    type: object
+  internal_tv.ExternalIDs:
+    properties:
+      facebook_id:
+        type: string
+      freebase_id:
+        type: string
+      freebase_mid:
+        type: string
+      imdb_id:
+        type: string
+      instagram_id:
+        type: string
+      tvdb_id:
+        type: integer
+      tvrage_id:
+        type: integer
+      twitter_id:
+        type: string
+      wikidata_id:
+        type: string
+    type: object
+  internal_tv.Flatrate:
+    properties:
+      display_priority:
+        type: integer
+      logo_path:
+        type: string
+      provider_id:
+        type: integer
+      provider_name:
+        type: string
+    type: object
+  internal_tv.Genre:
+    properties:
+      id:
+        type: integer
+      name:
+        type: string
+    type: object
+  internal_tv.Network:
+    properties:
+      id:
+        type: integer
+      logo_path:
+        type: string
+      name:
+        type: string
+      origin_country:
+        type: string
+    type: object
+  internal_tv.ProductionCompany:
+    properties:
+      id:
+        type: integer
+      logo_path:
+        type: string
+      name:
+        type: string
+      origin_country:
+        type: string
+    type: object
+  internal_tv.ProductionCountry:
+    properties:
+      iso_3166_1:
+        type: string
+      name:
+        type: string
+    type: object
+  internal_tv.Season:
+    properties:
+      air_date:
+        type: string
+      episode_count:
+        type: integer
+      id:
+        type: integer
+      name:
+        type: string
+      overview:
+        type: string
+      poster_path:
+        type: string
+      season_number:
+        type: integer
+      vote_average:
+        type: number
+    type: object
+  internal_tv.SpokenLanguage:
+    properties:
+      english_name:
+        type: string
+      iso_639_1:
+        type: string
+      name:
+        type: string
+    type: object
+  internal_tv.TVResponse:
+    properties:
+      adult:
+        type: boolean
+      backdrop_path:
+        type: string
+      created_by:
+        items:
+          $ref: '#/definitions/internal_tv.CreatedBy'
+        type: array
+      credits:
+        $ref: '#/definitions/internal_tv.Credits'
+      episode_run_time:
+        items:
+          type: integer
+        type: array
+      external_ids:
+        $ref: '#/definitions/internal_tv.ExternalIDs'
+      first_air_date:
+        type: string
+      genres:
+        items:
+          $ref: '#/definitions/internal_tv.Genre'
+        type: array
+      homepage:
+        type: string
+      id:
+        type: integer
+      imdb_id:
+        type: string
+      in_production:
+        type: boolean
+      is_anime:
+        type: boolean
+      languages:
+        items:
+          type: string
+        type: array
+      last_air_date:
+        type: string
+      last_episode_to_air:
+        $ref: '#/definitions/internal_tv.Episode'
+      media_type:
+        type: string
+      name:
+        type: string
+      networks:
+        items:
+          $ref: '#/definitions/internal_tv.Network'
+        type: array
+      next_episode_to_air:
+        $ref: '#/definitions/internal_tv.Episode'
+      number_of_episodes:
+        type: integer
+      number_of_seasons:
+        type: integer
+      origin_country:
+        items:
+          type: string
+        type: array
+      original_language:
+        type: string
+      original_name:
+        type: string
+      overview:
+        type: string
+      popularity:
+        type: number
+      poster_path:
+        type: string
+      production_companies:
+        items:
+          $ref: '#/definitions/internal_tv.ProductionCompany'
+        type: array
+      production_countries:
+        items:
+          $ref: '#/definitions/internal_tv.ProductionCountry'
+        type: array
+      seasons:
+        items:
+          $ref: '#/definitions/internal_tv.Season'
+        type: array
+      softcore:
+        type: boolean
+      spoken_languages:
+        items:
+          $ref: '#/definitions/internal_tv.SpokenLanguage'
+        type: array
+      status:
+        type: string
+      tagline:
+        type: string
+      type:
+        type: string
+      videos:
+        $ref: '#/definitions/internal_tv.Videos'
+      vote_average:
+        type: number
+      vote_count:
+        type: integer
+      watch/providers:
+        $ref: '#/definitions/internal_tv.WatchProviders'
     type: object
   internal_tv.TVState:
     properties:
@@ -104,6 +704,68 @@ definitions:
       watchlisted_at:
         type: string
     type: object
+  internal_tv.VideoResult:
+    properties:
+      id:
+        type: string
+      iso_639_1:
+        type: string
+      iso_3166_1:
+        type: string
+      key:
+        type: string
+      name:
+        type: string
+      official:
+        type: boolean
+      published_at:
+        type: string
+      site:
+        type: string
+      size:
+        type: integer
+      type:
+        type: string
+    type: object
+  internal_tv.Videos:
+    properties:
+      results:
+        items:
+          $ref: '#/definitions/internal_tv.VideoResult'
+        type: array
+    type: object
+  internal_tv.WatchProviderCountry:
+    properties:
+      ads:
+        items:
+          $ref: '#/definitions/internal_tv.Flatrate'
+        type: array
+      buy:
+        items:
+          $ref: '#/definitions/internal_tv.Flatrate'
+        type: array
+      flatrate:
+        items:
+          $ref: '#/definitions/internal_tv.Flatrate'
+        type: array
+      free:
+        items:
+          $ref: '#/definitions/internal_tv.Flatrate'
+        type: array
+      link:
+        type: string
+      rent:
+        items:
+          $ref: '#/definitions/internal_tv.Flatrate'
+        type: array
+    type: object
+  internal_tv.WatchProviders:
+    properties:
+      results:
+        additionalProperties:
+          $ref: '#/definitions/internal_tv.WatchProviderCountry'
+        type: object
+    type: object
 host: localhost:8080
 info:
   contact:
@@ -126,6 +788,100 @@ paths:
       summary: Health check
       tags:
       - health
+  /movie/discover:
+    get:
+      description: Browse the local movie cache with TMDB-style filters and sort.
+        Each result is enriched with full TMDB detail via append_to_response.
+      parameters:
+      - description: Page number (default 1)
+        in: query
+        name: page
+        type: integer
+      - description: popularity.desc | release_date.desc | vote_average.desc | title.asc
+          | ...
+        in: query
+        name: sort_by
+        type: string
+      - description: Comma-separated genre IDs (AND logic)
+        in: query
+        name: with_genres
+        type: string
+      - description: Comma-separated genre IDs to exclude
+        in: query
+        name: without_genres
+        type: string
+      - description: Filter by release year
+        in: query
+        name: primary_release_year
+        type: integer
+      - description: Release date >= (YYYY-MM-DD)
+        in: query
+        name: release_date.gte
+        type: string
+      - description: Release date <= (YYYY-MM-DD)
+        in: query
+        name: release_date.lte
+        type: string
+      - description: Vote average >=
+        in: query
+        name: vote_average.gte
+        type: number
+      - description: Vote average <=
+        in: query
+        name: vote_average.lte
+        type: number
+      - description: Vote count >=
+        in: query
+        name: vote_count.gte
+        type: integer
+      - description: ISO 639-1 language code (e.g. en, th)
+        in: query
+        name: with_original_language
+        type: string
+      - description: Include adult content (default false)
+        in: query
+        name: include_adult
+        type: boolean
+      - description: Filter by softcore flag
+        in: query
+        name: softcore
+        type: boolean
+      - description: Comma-separated provider IDs
+        in: query
+        name: with_watch_providers
+        type: string
+      - description: ISO 3166-1 country code for watch provider filter
+        in: query
+        name: watch_region
+        type: string
+      - description: watchlist | watched
+        in: query
+        name: with_account_status
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_peera_movizius-go-service_internal_shared_response.Page-internal_movie_MovieResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Discover movies
+      tags:
+      - movies
   /movie/states:
     get:
       description: Returns all movie watchlist/history records for the authenticated
@@ -226,6 +982,116 @@ paths:
       summary: Send test notification
       tags:
       - notification
+  /tv/discover:
+    get:
+      description: Browse the local TV cache with TMDB-style filters and sort. Each
+        result is enriched with full TMDB detail via append_to_response.
+      parameters:
+      - description: Page number (default 1)
+        in: query
+        name: page
+        type: integer
+      - description: popularity.desc | first_air_date.desc | vote_average.desc | name.asc
+          | max_watched_ep.desc | max_watched_ep.asc | ...
+        in: query
+        name: sort_by
+        type: string
+      - description: Comma-separated genre IDs (AND logic)
+        in: query
+        name: with_genres
+        type: string
+      - description: Comma-separated genre IDs to exclude
+        in: query
+        name: without_genres
+        type: string
+      - description: Filter by first air date year
+        in: query
+        name: first_air_date_year
+        type: integer
+      - description: First air date >= (YYYY-MM-DD)
+        in: query
+        name: first_air_date.gte
+        type: string
+      - description: First air date <= (YYYY-MM-DD)
+        in: query
+        name: first_air_date.lte
+        type: string
+      - description: Vote average >=
+        in: query
+        name: vote_average.gte
+        type: number
+      - description: Vote average <=
+        in: query
+        name: vote_average.lte
+        type: number
+      - description: Vote count >=
+        in: query
+        name: vote_count.gte
+        type: integer
+      - description: ISO 639-1 language code (e.g. en, th)
+        in: query
+        name: with_original_language
+        type: string
+      - description: Include adult content (default false)
+        in: query
+        name: include_adult
+        type: boolean
+      - description: Filter by softcore flag
+        in: query
+        name: softcore
+        type: boolean
+      - description: Comma-separated provider IDs
+        in: query
+        name: with_watch_providers
+        type: string
+      - description: ISO 3166-1 country code for watch provider filter
+        in: query
+        name: watch_region
+        type: string
+      - description: watchlist | watching | wait_next_season | watched
+        in: query
+        name: with_account_status
+        type: string
+      - description: Comma-separated network IDs
+        in: query
+        name: with_networks
+        type: string
+      - description: Filter by anime flag
+        in: query
+        name: is_anime
+        type: boolean
+      - description: TV series status (e.g. Returning Series, Ended)
+        in: query
+        name: with_status
+        type: string
+      - description: TV series type (e.g. Scripted, Documentary)
+        in: query
+        name: with_type
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_peera_movizius-go-service_internal_shared_response.Page-internal_tv_TVResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Discover TV series
+      tags:
+      - tv
   /tv/states:
     get:
       description: Returns all TV series watchlist/history records for the authenticated

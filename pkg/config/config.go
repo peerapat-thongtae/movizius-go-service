@@ -15,6 +15,7 @@ type Config struct {
 	Auth0Audience                string
 	Port                         string
 	FirebaseServiceAccountBase64 string
+	TMDBAccessToken              string
 }
 
 // Load reads required environment variables and returns a Config.
@@ -28,6 +29,7 @@ func Load() (*Config, error) {
 		Auth0Audience:                os.Getenv("AUTH0_AUDIENCE"),
 		Port:                         os.Getenv("PORT"),
 		FirebaseServiceAccountBase64: os.Getenv("FIREBASE_SERVICE_ACCOUNT_BASE64"),
+		TMDBAccessToken:              os.Getenv("TMDB_API_READ_ACCESS_TOKEN"),
 	}
 
 	if cfg.MongoURI == "" {
@@ -47,6 +49,9 @@ func Load() (*Config, error) {
 	}
 	if cfg.FirebaseServiceAccountBase64 == "" {
 		return nil, errors.New("FIREBASE_SERVICE_ACCOUNT_BASE64 is required")
+	}
+	if cfg.TMDBAccessToken == "" {
+		return nil, errors.New("TMDB_ACCESS_TOKEN is required")
 	}
 
 	if cfg.Port == "" {

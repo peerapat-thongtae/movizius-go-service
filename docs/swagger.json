@@ -32,6 +32,147 @@
                 }
             }
         },
+        "/movie/discover": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Browse the local movie cache with TMDB-style filters and sort. Each result is enriched with full TMDB detail via append_to_response.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "movies"
+                ],
+                "summary": "Discover movies",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Page number (default 1)",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "popularity.desc | release_date.desc | vote_average.desc | title.asc | ...",
+                        "name": "sort_by",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Comma-separated genre IDs (AND logic)",
+                        "name": "with_genres",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Comma-separated genre IDs to exclude",
+                        "name": "without_genres",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Filter by release year",
+                        "name": "primary_release_year",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Release date \u003e= (YYYY-MM-DD)",
+                        "name": "release_date.gte",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Release date \u003c= (YYYY-MM-DD)",
+                        "name": "release_date.lte",
+                        "in": "query"
+                    },
+                    {
+                        "type": "number",
+                        "description": "Vote average \u003e=",
+                        "name": "vote_average.gte",
+                        "in": "query"
+                    },
+                    {
+                        "type": "number",
+                        "description": "Vote average \u003c=",
+                        "name": "vote_average.lte",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Vote count \u003e=",
+                        "name": "vote_count.gte",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "ISO 639-1 language code (e.g. en, th)",
+                        "name": "with_original_language",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "Include adult content (default false)",
+                        "name": "include_adult",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "Filter by softcore flag",
+                        "name": "softcore",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Comma-separated provider IDs",
+                        "name": "with_watch_providers",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "ISO 3166-1 country code for watch provider filter",
+                        "name": "watch_region",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "watchlist | watched",
+                        "name": "with_account_status",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_peera_movizius-go-service_internal_shared_response.Page-internal_movie_MovieResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/movie/states": {
             "get": {
                 "security": [
@@ -187,6 +328,171 @@
                 }
             }
         },
+        "/tv/discover": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Browse the local TV cache with TMDB-style filters and sort. Each result is enriched with full TMDB detail via append_to_response.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "tv"
+                ],
+                "summary": "Discover TV series",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Page number (default 1)",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "popularity.desc | first_air_date.desc | vote_average.desc | name.asc | max_watched_ep.desc | max_watched_ep.asc | ...",
+                        "name": "sort_by",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Comma-separated genre IDs (AND logic)",
+                        "name": "with_genres",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Comma-separated genre IDs to exclude",
+                        "name": "without_genres",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Filter by first air date year",
+                        "name": "first_air_date_year",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "First air date \u003e= (YYYY-MM-DD)",
+                        "name": "first_air_date.gte",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "First air date \u003c= (YYYY-MM-DD)",
+                        "name": "first_air_date.lte",
+                        "in": "query"
+                    },
+                    {
+                        "type": "number",
+                        "description": "Vote average \u003e=",
+                        "name": "vote_average.gte",
+                        "in": "query"
+                    },
+                    {
+                        "type": "number",
+                        "description": "Vote average \u003c=",
+                        "name": "vote_average.lte",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Vote count \u003e=",
+                        "name": "vote_count.gte",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "ISO 639-1 language code (e.g. en, th)",
+                        "name": "with_original_language",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "Include adult content (default false)",
+                        "name": "include_adult",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "Filter by softcore flag",
+                        "name": "softcore",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Comma-separated provider IDs",
+                        "name": "with_watch_providers",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "ISO 3166-1 country code for watch provider filter",
+                        "name": "watch_region",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "watchlist | watching | wait_next_season | watched",
+                        "name": "with_account_status",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Comma-separated network IDs",
+                        "name": "with_networks",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "Filter by anime flag",
+                        "name": "is_anime",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "TV series status (e.g. Returning Series, Ended)",
+                        "name": "with_status",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "TV series type (e.g. Scripted, Documentary)",
+                        "name": "with_type",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_peera_movizius-go-service_internal_shared_response.Page-internal_tv_TVResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/tv/states": {
             "get": {
                 "security": [
@@ -232,6 +538,26 @@
         }
     },
     "definitions": {
+        "github_com_peera_movizius-go-service_internal_shared_response.Page-internal_movie_MovieResponse": {
+            "type": "object",
+            "properties": {
+                "page": {
+                    "type": "integer"
+                },
+                "results": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_movie.MovieResponse"
+                    }
+                },
+                "total_pages": {
+                    "type": "integer"
+                },
+                "total_results": {
+                    "type": "integer"
+                }
+            }
+        },
         "github_com_peera_movizius-go-service_internal_shared_response.Page-internal_movie_MovieUser": {
             "type": "object",
             "properties": {
@@ -242,6 +568,26 @@
                     "type": "array",
                     "items": {
                         "$ref": "#/definitions/internal_movie.MovieUser"
+                    }
+                },
+                "total_pages": {
+                    "type": "integer"
+                },
+                "total_results": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_peera_movizius-go-service_internal_shared_response.Page-internal_tv_TVResponse": {
+            "type": "object",
+            "properties": {
+                "page": {
+                    "type": "integer"
+                },
+                "results": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_tv.TVResponse"
                     }
                 },
                 "total_pages": {
@@ -280,6 +626,265 @@
                 }
             }
         },
+        "internal_movie.Cast": {
+            "type": "object",
+            "properties": {
+                "adult": {
+                    "type": "boolean"
+                },
+                "cast_id": {
+                    "type": "integer"
+                },
+                "character": {
+                    "type": "string"
+                },
+                "credit_id": {
+                    "type": "string"
+                },
+                "department": {
+                    "type": "string"
+                },
+                "gender": {
+                    "type": "integer"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "job": {
+                    "type": "string"
+                },
+                "known_for_department": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "order": {
+                    "type": "integer"
+                },
+                "original_name": {
+                    "type": "string"
+                },
+                "popularity": {
+                    "type": "number"
+                },
+                "profile_path": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_movie.Casts": {
+            "type": "object",
+            "properties": {
+                "cast": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_movie.Cast"
+                    }
+                },
+                "crew": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_movie.Cast"
+                    }
+                }
+            }
+        },
+        "internal_movie.Collection": {
+            "type": "object",
+            "properties": {
+                "backdrop_path": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "poster_path": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_movie.ExternalIDs": {
+            "type": "object",
+            "properties": {
+                "facebook_id": {
+                    "type": "string"
+                },
+                "imdb_id": {
+                    "type": "string"
+                },
+                "instagram_id": {
+                    "type": "string"
+                },
+                "twitter_id": {
+                    "type": "string"
+                },
+                "wikidata_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_movie.Flatrate": {
+            "type": "object",
+            "properties": {
+                "display_priority": {
+                    "type": "integer"
+                },
+                "logo_path": {
+                    "type": "string"
+                },
+                "provider_id": {
+                    "type": "integer"
+                },
+                "provider_name": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_movie.Genre": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "integer"
+                },
+                "name": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_movie.MovieResponse": {
+            "type": "object",
+            "properties": {
+                "adult": {
+                    "type": "boolean"
+                },
+                "backdrop_path": {
+                    "type": "string"
+                },
+                "belongs_to_collection": {
+                    "$ref": "#/definitions/internal_movie.Collection"
+                },
+                "budget": {
+                    "type": "integer"
+                },
+                "casts": {
+                    "$ref": "#/definitions/internal_movie.Casts"
+                },
+                "external_ids": {
+                    "$ref": "#/definitions/internal_movie.ExternalIDs"
+                },
+                "genres": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_movie.Genre"
+                    }
+                },
+                "homepage": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "imdb_id": {
+                    "type": "string"
+                },
+                "media_type": {
+                    "type": "string"
+                },
+                "origin_country": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "original_language": {
+                    "type": "string"
+                },
+                "original_title": {
+                    "type": "string"
+                },
+                "overview": {
+                    "type": "string"
+                },
+                "popularity": {
+                    "type": "number"
+                },
+                "poster_path": {
+                    "type": "string"
+                },
+                "production_companies": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_movie.ProductionCompany"
+                    }
+                },
+                "production_countries": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_movie.ProductionCountry"
+                    }
+                },
+                "release_date": {
+                    "type": "string"
+                },
+                "release_dates": {
+                    "$ref": "#/definitions/internal_movie.ReleaseDates"
+                },
+                "release_dates_th": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_movie.ReleaseDate"
+                    }
+                },
+                "revenue": {
+                    "type": "integer"
+                },
+                "runtime": {
+                    "type": "integer"
+                },
+                "softcore": {
+                    "type": "boolean"
+                },
+                "spoken_languages": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_movie.SpokenLanguage"
+                    }
+                },
+                "status": {
+                    "type": "string"
+                },
+                "tagline": {
+                    "type": "string"
+                },
+                "title": {
+                    "type": "string"
+                },
+                "video": {
+                    "type": "boolean"
+                },
+                "videos": {
+                    "$ref": "#/definitions/internal_movie.Videos"
+                },
+                "vote_average": {
+                    "type": "number"
+                },
+                "vote_count": {
+                    "type": "integer"
+                },
+                "watch/providers": {
+                    "description": "JSON key is \"watch/providers\" per TMDB's append_to_response convention.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/internal_movie.WatchProviders"
+                        }
+                    ]
+                }
+            }
+        },
         "internal_movie.MovieUser": {
             "type": "object",
             "properties": {
@@ -300,6 +905,194 @@
                 },
                 "watchlisted_at": {
                     "type": "string"
+                }
+            }
+        },
+        "internal_movie.ProductionCompany": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "integer"
+                },
+                "logo_path": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "origin_country": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_movie.ProductionCountry": {
+            "type": "object",
+            "properties": {
+                "iso_3166_1": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_movie.ReleaseDate": {
+            "type": "object",
+            "properties": {
+                "certification": {
+                    "type": "string"
+                },
+                "descriptors": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "iso_639_1": {
+                    "type": "string"
+                },
+                "note": {
+                    "type": "string"
+                },
+                "release_date": {
+                    "type": "string"
+                },
+                "type": {
+                    "type": "integer"
+                }
+            }
+        },
+        "internal_movie.ReleaseDates": {
+            "type": "object",
+            "properties": {
+                "results": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_movie.ReleaseDatesResult"
+                    }
+                }
+            }
+        },
+        "internal_movie.ReleaseDatesResult": {
+            "type": "object",
+            "properties": {
+                "iso_3166_1": {
+                    "type": "string"
+                },
+                "release_dates": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_movie.ReleaseDate"
+                    }
+                }
+            }
+        },
+        "internal_movie.SpokenLanguage": {
+            "type": "object",
+            "properties": {
+                "english_name": {
+                    "type": "string"
+                },
+                "iso_639_1": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_movie.VideoResult": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "string"
+                },
+                "iso_3166_1": {
+                    "type": "string"
+                },
+                "iso_639_1": {
+                    "type": "string"
+                },
+                "key": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "official": {
+                    "type": "boolean"
+                },
+                "published_at": {
+                    "type": "string"
+                },
+                "site": {
+                    "type": "string"
+                },
+                "size": {
+                    "type": "integer"
+                },
+                "type": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_movie.Videos": {
+            "type": "object",
+            "properties": {
+                "results": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_movie.VideoResult"
+                    }
+                }
+            }
+        },
+        "internal_movie.WatchProviderCountry": {
+            "type": "object",
+            "properties": {
+                "ads": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_movie.Flatrate"
+                    }
+                },
+                "buy": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_movie.Flatrate"
+                    }
+                },
+                "flatrate": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_movie.Flatrate"
+                    }
+                },
+                "free": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_movie.Flatrate"
+                    }
+                },
+                "link": {
+                    "type": "string"
+                },
+                "rent": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_movie.Flatrate"
+                    }
+                }
+            }
+        },
+        "internal_movie.WatchProviders": {
+            "type": "object",
+            "properties": {
+                "results": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "$ref": "#/definitions/internal_movie.WatchProviderCountry"
+                    }
                 }
             }
         },
@@ -328,6 +1121,134 @@
                 }
             }
         },
+        "internal_tv.CastMember": {
+            "type": "object",
+            "properties": {
+                "adult": {
+                    "type": "boolean"
+                },
+                "character": {
+                    "type": "string"
+                },
+                "credit_id": {
+                    "type": "string"
+                },
+                "department": {
+                    "type": "string"
+                },
+                "gender": {
+                    "type": "integer"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "job": {
+                    "type": "string"
+                },
+                "known_for_department": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "order": {
+                    "type": "integer"
+                },
+                "original_name": {
+                    "type": "string"
+                },
+                "popularity": {
+                    "type": "number"
+                },
+                "profile_path": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_tv.CreatedBy": {
+            "type": "object",
+            "properties": {
+                "credit_id": {
+                    "type": "string"
+                },
+                "gender": {
+                    "type": "integer"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "original_name": {
+                    "type": "string"
+                },
+                "profile_path": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_tv.Credits": {
+            "type": "object",
+            "properties": {
+                "cast": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_tv.CastMember"
+                    }
+                },
+                "crew": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_tv.CastMember"
+                    }
+                }
+            }
+        },
+        "internal_tv.Episode": {
+            "type": "object",
+            "properties": {
+                "air_date": {
+                    "type": "string"
+                },
+                "episode_number": {
+                    "type": "integer"
+                },
+                "episode_type": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "overview": {
+                    "type": "string"
+                },
+                "production_code": {
+                    "type": "string"
+                },
+                "runtime": {
+                    "type": "integer"
+                },
+                "season_number": {
+                    "type": "integer"
+                },
+                "show_id": {
+                    "type": "integer"
+                },
+                "still_path": {
+                    "type": "string"
+                },
+                "vote_average": {
+                    "type": "number"
+                },
+                "vote_count": {
+                    "type": "integer"
+                }
+            }
+        },
         "internal_tv.EpisodeWatched": {
             "type": "object",
             "properties": {
@@ -342,6 +1263,309 @@
                 },
                 "watched_at": {
                     "type": "string"
+                }
+            }
+        },
+        "internal_tv.ExternalIDs": {
+            "type": "object",
+            "properties": {
+                "facebook_id": {
+                    "type": "string"
+                },
+                "freebase_id": {
+                    "type": "string"
+                },
+                "freebase_mid": {
+                    "type": "string"
+                },
+                "imdb_id": {
+                    "type": "string"
+                },
+                "instagram_id": {
+                    "type": "string"
+                },
+                "tvdb_id": {
+                    "type": "integer"
+                },
+                "tvrage_id": {
+                    "type": "integer"
+                },
+                "twitter_id": {
+                    "type": "string"
+                },
+                "wikidata_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_tv.Flatrate": {
+            "type": "object",
+            "properties": {
+                "display_priority": {
+                    "type": "integer"
+                },
+                "logo_path": {
+                    "type": "string"
+                },
+                "provider_id": {
+                    "type": "integer"
+                },
+                "provider_name": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_tv.Genre": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "integer"
+                },
+                "name": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_tv.Network": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "integer"
+                },
+                "logo_path": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "origin_country": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_tv.ProductionCompany": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "integer"
+                },
+                "logo_path": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "origin_country": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_tv.ProductionCountry": {
+            "type": "object",
+            "properties": {
+                "iso_3166_1": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_tv.Season": {
+            "type": "object",
+            "properties": {
+                "air_date": {
+                    "type": "string"
+                },
+                "episode_count": {
+                    "type": "integer"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "overview": {
+                    "type": "string"
+                },
+                "poster_path": {
+                    "type": "string"
+                },
+                "season_number": {
+                    "type": "integer"
+                },
+                "vote_average": {
+                    "type": "number"
+                }
+            }
+        },
+        "internal_tv.SpokenLanguage": {
+            "type": "object",
+            "properties": {
+                "english_name": {
+                    "type": "string"
+                },
+                "iso_639_1": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_tv.TVResponse": {
+            "type": "object",
+            "properties": {
+                "adult": {
+                    "type": "boolean"
+                },
+                "backdrop_path": {
+                    "type": "string"
+                },
+                "created_by": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_tv.CreatedBy"
+                    }
+                },
+                "credits": {
+                    "$ref": "#/definitions/internal_tv.Credits"
+                },
+                "episode_run_time": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                "external_ids": {
+                    "$ref": "#/definitions/internal_tv.ExternalIDs"
+                },
+                "first_air_date": {
+                    "type": "string"
+                },
+                "genres": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_tv.Genre"
+                    }
+                },
+                "homepage": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "imdb_id": {
+                    "type": "string"
+                },
+                "in_production": {
+                    "type": "boolean"
+                },
+                "is_anime": {
+                    "type": "boolean"
+                },
+                "languages": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "last_air_date": {
+                    "type": "string"
+                },
+                "last_episode_to_air": {
+                    "$ref": "#/definitions/internal_tv.Episode"
+                },
+                "media_type": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "networks": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_tv.Network"
+                    }
+                },
+                "next_episode_to_air": {
+                    "$ref": "#/definitions/internal_tv.Episode"
+                },
+                "number_of_episodes": {
+                    "type": "integer"
+                },
+                "number_of_seasons": {
+                    "type": "integer"
+                },
+                "origin_country": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "original_language": {
+                    "type": "string"
+                },
+                "original_name": {
+                    "type": "string"
+                },
+                "overview": {
+                    "type": "string"
+                },
+                "popularity": {
+                    "type": "number"
+                },
+                "poster_path": {
+                    "type": "string"
+                },
+                "production_companies": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_tv.ProductionCompany"
+                    }
+                },
+                "production_countries": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_tv.ProductionCountry"
+                    }
+                },
+                "seasons": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_tv.Season"
+                    }
+                },
+                "softcore": {
+                    "type": "boolean"
+                },
+                "spoken_languages": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_tv.SpokenLanguage"
+                    }
+                },
+                "status": {
+                    "type": "string"
+                },
+                "tagline": {
+                    "type": "string"
+                },
+                "type": {
+                    "type": "string"
+                },
+                "videos": {
+                    "$ref": "#/definitions/internal_tv.Videos"
+                },
+                "vote_average": {
+                    "type": "number"
+                },
+                "vote_count": {
+                    "type": "integer"
+                },
+                "watch/providers": {
+                    "$ref": "#/definitions/internal_tv.WatchProviders"
                 }
             }
         },
@@ -389,6 +1613,101 @@
                 },
                 "watchlisted_at": {
                     "type": "string"
+                }
+            }
+        },
+        "internal_tv.VideoResult": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "string"
+                },
+                "iso_3166_1": {
+                    "type": "string"
+                },
+                "iso_639_1": {
+                    "type": "string"
+                },
+                "key": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "official": {
+                    "type": "boolean"
+                },
+                "published_at": {
+                    "type": "string"
+                },
+                "site": {
+                    "type": "string"
+                },
+                "size": {
+                    "type": "integer"
+                },
+                "type": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_tv.Videos": {
+            "type": "object",
+            "properties": {
+                "results": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_tv.VideoResult"
+                    }
+                }
+            }
+        },
+        "internal_tv.WatchProviderCountry": {
+            "type": "object",
+            "properties": {
+                "ads": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_tv.Flatrate"
+                    }
+                },
+                "buy": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_tv.Flatrate"
+                    }
+                },
+                "flatrate": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_tv.Flatrate"
+                    }
+                },
+                "free": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_tv.Flatrate"
+                    }
+                },
+                "link": {
+                    "type": "string"
+                },
+                "rent": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_tv.Flatrate"
+                    }
+                }
+            }
+        },
+        "internal_tv.WatchProviders": {
+            "type": "object",
+            "properties": {
+                "results": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "$ref": "#/definitions/internal_tv.WatchProviderCountry"
+                    }
                 }
             }
         }

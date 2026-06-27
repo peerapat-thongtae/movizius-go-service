@@ -17,6 +17,7 @@ import (
 	"github.com/peera/movizius-go-service/internal/shared/response"
 	"github.com/peera/movizius-go-service/internal/tv"
 	"github.com/peera/movizius-go-service/pkg/cache"
+	"github.com/peera/movizius-go-service/pkg/tmdb"
 )
 
 // Deps holds the shared infrastructure dependencies injected into feature handlers.
@@ -27,6 +28,7 @@ type Deps struct {
 	Auth0IssuerURL string
 	Auth0Audience  string
 	Firebase       *firebase.App
+	TMDB           *tmdb.Client
 }
 
 // New constructs the application handler with all feature routes registered under /api.
@@ -52,8 +54,8 @@ func New(deps Deps) http.Handler {
 	}))
 
 	// Protected routes — each feature applies auth to its own handlers.
-	movie.NewHandler(movie.NewService(movie.NewRepository(deps.DB))).RegisterRoutes(mux, auth)
-	tv.NewHandler(tv.NewService(tv.NewRepository(deps.DB))).RegisterRoutes(mux, auth)
+	movie.NewHandler(movie.NewService(movie.NewRepository(deps.DB), deps.TMDB)).RegisterRoutes(mux, auth)
+	tv.NewHandler(tv.NewService(tv.NewRepository(deps.DB), deps.TMDB)).RegisterRoutes(mux, auth)
 	notification.NewHandler(notification.NewService(notification.NewRepository(deps.DB), deps.Firebase)).RegisterRoutes(mux, auth)
 
 	// Mount the inner mux under /api/. StripPrefix removes /api before the inner
