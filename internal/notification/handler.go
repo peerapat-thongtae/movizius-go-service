@@ -27,6 +27,7 @@ func NewHandler(service *NotificationService) *Handler {
 // RegisterRoutes binds notification routes onto the given mux.
 func (h *Handler) RegisterRoutes(mux *http.ServeMux, auth func(http.Handler) http.Handler) {
 	mux.Handle("POST /notification/devices", auth(http.HandlerFunc(h.RegisterDevice)))
+	mux.Handle("POST /notification/test", auth(http.HandlerFunc(h.SendTest)))
 }
 
 // RegisterDevice registers or refreshes a device FCM token for push notifications.
@@ -71,4 +72,31 @@ func (h *Handler) RegisterDevice(w http.ResponseWriter, r *http.Request) {
 	}
 
 	response.Success(w, http.StatusCreated, map[string]string{"message": "device registered"})
+}
+
+// SendTest sends a test FCM notification to all registered devices.
+//
+//	@Summary		Send test notification
+//	@Description	Sends a test push notification to every device token in the collection.
+//	@Tags			notification
+//	@Produce		json
+//	@Security		BearerAuth
+//	@Success		200	{object}	notification.TestNotificationResult
+//	@Failure		401	{object}	map[string]string
+//	@Failure		500	{object}	map[string]string
+//	@Router			/notification/test [post]
+func (h *Handler) SendTest(w http.ResponseWriter, r *http.Request) {
+	_, ok := middleware.UserIDFromContext(r.Context())
+	if !ok {
+		response.Error(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
+	result, err := h.service.SendTestToAll(r.Context())
+	if err != nil {
+		response.Error(w, http.StatusInternalServerError, "failed to send test notification")
+		return
+	}
+
+	response.Success(w, http.StatusOK, result)
 }

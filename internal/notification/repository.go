@@ -15,6 +15,7 @@ const collectionName = "notification_devices"
 // NotificationRepository is the data access contract for the notification_devices collection.
 type NotificationRepository interface {
 	UpsertDevice(ctx context.Context, device NotificationDevice) error
+	FindAll(ctx context.Context) ([]NotificationDevice, error)
 }
 
 type mongoNotificationRepository struct {
@@ -40,6 +41,22 @@ func (r *mongoNotificationRepository) ensureIndexes() {
 		Options: options.Index().SetUnique(true).SetName("fcm_token_unique"),
 	}
 	_, _ = coll.Indexes().CreateOne(ctx, model)
+}
+
+// FindAll returns all registered device records.
+func (r *mongoNotificationRepository) FindAll(ctx context.Context) ([]NotificationDevice, error) {
+	coll := r.db.Collection(collectionName)
+	cursor, err := coll.Find(ctx, bson.M{})
+	if err != nil {
+		return nil, fmt.Errorf("notification: find all: %w", err)
+	}
+	defer cursor.Close(ctx)
+
+	var devices []NotificationDevice
+	if err := cursor.All(ctx, &devices); err != nil {
+		return nil, fmt.Errorf("notification: decode devices: %w", err)
+	}
+	return devices, nil
 }
 
 // UpsertDevice inserts or updates the device row keyed on fcm_token.

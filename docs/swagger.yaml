@@ -53,6 +53,15 @@ definitions:
       platform:
         type: string
     type: object
+  internal_notification.TestNotificationResult:
+    properties:
+      failed:
+        type: integer
+      succeeded:
+        type: integer
+      total:
+        type: integer
+    type: object
   internal_tv.EpisodeWatched:
     properties:
       episode_id:
@@ -188,6 +197,33 @@ paths:
       security:
       - BearerAuth: []
       summary: Register device token
+      tags:
+      - notification
+  /notification/test:
+    post:
+      description: Sends a test push notification to every device token in the collection.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_notification.TestNotificationResult'
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Send test notification
       tags:
       - notification
   /tv/states:
