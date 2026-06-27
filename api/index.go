@@ -10,6 +10,7 @@ import (
 	"github.com/peera/movizius-go-service/pkg/cache"
 	"github.com/peera/movizius-go-service/pkg/config"
 	"github.com/peera/movizius-go-service/pkg/database"
+	pkgfirebase "github.com/peera/movizius-go-service/pkg/firebase"
 )
 
 // app is built once per cold start and reused across warm invocations.
@@ -31,12 +32,18 @@ func init() {
 		log.Fatalf("jwks: %v", err)
 	}
 
+	firebaseApp, err := pkgfirebase.New(cfg.FirebaseServiceAccountBase64)
+	if err != nil {
+		log.Fatalf("firebase: %v", err)
+	}
+
 	app = router.New(router.Deps{
 		DB:             database.DB(client, "moviedb"),
 		Cache:          cache.NewUpstash(cfg.UpstashURL, cfg.UpstashToken),
 		JWKS:           jwks,
 		Auth0IssuerURL: cfg.Auth0IssuerURL,
 		Auth0Audience:  cfg.Auth0Audience,
+		Firebase:       firebaseApp,
 	})
 }
 

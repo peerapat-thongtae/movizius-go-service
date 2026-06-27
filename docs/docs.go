@@ -81,6 +81,75 @@ const docTemplate = `{
                 }
             }
         },
+        "/notification/devices": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Registers or updates a device FCM token for the authenticated user. Platform must be one of: ios, android, web.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "notification"
+                ],
+                "summary": "Register device token",
+                "parameters": [
+                    {
+                        "description": "FCM token and platform",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_notification.RegisterDeviceRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/tv/states": {
             "get": {
                 "security": [
@@ -193,6 +262,17 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "watchlisted_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_notification.RegisterDeviceRequest": {
+            "type": "object",
+            "properties": {
+                "fcm_token": {
+                    "type": "string"
+                },
+                "platform": {
                     "type": "string"
                 }
             }

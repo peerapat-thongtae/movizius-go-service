@@ -28,6 +28,7 @@ import (
 	"github.com/peera/movizius-go-service/pkg/cache"
 	"github.com/peera/movizius-go-service/pkg/config"
 	"github.com/peera/movizius-go-service/pkg/database"
+	pkgfirebase "github.com/peera/movizius-go-service/pkg/firebase"
 	"github.com/peera/movizius-go-service/pkg/logger"
 )
 
@@ -57,6 +58,13 @@ func main() {
 	}
 	log.Info("jwks loaded", "issuer", cfg.Auth0IssuerURL)
 
+	firebaseApp, err := pkgfirebase.New(cfg.FirebaseServiceAccountBase64)
+	if err != nil {
+		log.Error("failed to initialize firebase", "error", err)
+		os.Exit(1)
+	}
+	log.Info("firebase initialized")
+
 	addr := ":" + cfg.Port
 	log.Info("starting server", "addr", addr)
 
@@ -66,6 +74,7 @@ func main() {
 		JWKS:           jwks,
 		Auth0IssuerURL: cfg.Auth0IssuerURL,
 		Auth0Audience:  cfg.Auth0Audience,
+		Firebase:       firebaseApp,
 	})); err != nil {
 		log.Error("server stopped", "error", err)
 		os.Exit(1)

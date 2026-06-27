@@ -4,6 +4,7 @@ package router
 import (
 	"net/http"
 
+	firebase "firebase.google.com/go/v4"
 	"github.com/MicahParks/keyfunc/v3"
 	httpSwagger "github.com/swaggo/http-swagger"
 	"go.mongodb.org/mongo-driver/mongo"
@@ -11,6 +12,7 @@ import (
 	_ "github.com/peera/movizius-go-service/docs"
 	"github.com/peera/movizius-go-service/internal/health"
 	"github.com/peera/movizius-go-service/internal/movie"
+	"github.com/peera/movizius-go-service/internal/notification"
 	"github.com/peera/movizius-go-service/internal/shared/middleware"
 	"github.com/peera/movizius-go-service/internal/shared/response"
 	"github.com/peera/movizius-go-service/internal/tv"
@@ -24,6 +26,7 @@ type Deps struct {
 	JWKS           keyfunc.Keyfunc
 	Auth0IssuerURL string
 	Auth0Audience  string
+	Firebase       *firebase.App
 }
 
 // New constructs the application handler with all feature routes registered under /api.
@@ -51,6 +54,7 @@ func New(deps Deps) http.Handler {
 	// Protected routes — each feature applies auth to its own handlers.
 	movie.NewHandler(movie.NewService(movie.NewRepository(deps.DB))).RegisterRoutes(mux, auth)
 	tv.NewHandler(tv.NewService(tv.NewRepository(deps.DB))).RegisterRoutes(mux, auth)
+	notification.NewHandler(notification.NewService(notification.NewRepository(deps.DB), deps.Firebase)).RegisterRoutes(mux, auth)
 
 	// Mount the inner mux under /api/. StripPrefix removes /api before the inner
 	// mux sees the path, so features register routes without the base prefix.

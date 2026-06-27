@@ -46,6 +46,13 @@ definitions:
       watchlisted_at:
         type: string
     type: object
+  internal_notification.RegisterDeviceRequest:
+    properties:
+      fcm_token:
+        type: string
+      platform:
+        type: string
+    type: object
   internal_tv.EpisodeWatched:
     properties:
       episode_id:
@@ -138,6 +145,51 @@ paths:
       summary: List movie states
       tags:
       - movies
+  /notification/devices:
+    post:
+      consumes:
+      - application/json
+      description: 'Registers or updates a device FCM token for the authenticated
+        user. Platform must be one of: ios, android, web.'
+      parameters:
+      - description: FCM token and platform
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_notification.RegisterDeviceRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Register device token
+      tags:
+      - notification
   /tv/states:
     get:
       description: Returns all TV series watchlist/history records for the authenticated
