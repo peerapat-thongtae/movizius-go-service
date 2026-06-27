@@ -22,6 +22,13 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 }
 
 // Check returns the current service health.
+//
+//	@Summary		Health check
+//	@Description	Returns service status.
+//	@Tags			health
+//	@Produce		json
+//	@Success		200	{object}	health.Status
+//	@Router			/health [get]
 func (h *Handler) Check(w http.ResponseWriter, r *http.Request) {
 	status := h.service.Status(r.Context())
 	response.Success(w, http.StatusOK, status)

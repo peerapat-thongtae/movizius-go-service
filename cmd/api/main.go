@@ -1,4 +1,19 @@
 // Command api runs the Movizius HTTP server locally (and on non-Vercel hosts).
+//
+//	@title			Movizius API
+//	@version		1.0
+//	@description	Movie & TV Series tracking backend.
+//
+//	@contact.name	Movizius
+//	@contact.email	peera.thongtae@gmail.com
+//
+//	@host		localhost:8080
+//	@BasePath	/api
+//
+//	@securityDefinitions.apikey	BearerAuth
+//	@in							header
+//	@name						Authorization
+//	@description				JWT bearer token — format: "Bearer <token>"
 package main
 
 import (

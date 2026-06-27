@@ -1,0 +1,175 @@
+basePath: /api
+definitions:
+  github_com_peera_movizius-go-service_internal_shared_response.Page-internal_movie_MovieUser:
+    properties:
+      page:
+        type: integer
+      results:
+        items:
+          $ref: '#/definitions/internal_movie.MovieUser'
+        type: array
+      total_pages:
+        type: integer
+      total_results:
+        type: integer
+    type: object
+  github_com_peera_movizius-go-service_internal_shared_response.Page-internal_tv_TVState:
+    properties:
+      page:
+        type: integer
+      results:
+        items:
+          $ref: '#/definitions/internal_tv.TVState'
+        type: array
+      total_pages:
+        type: integer
+      total_results:
+        type: integer
+    type: object
+  internal_health.Status:
+    properties:
+      status:
+        type: string
+    type: object
+  internal_movie.MovieUser:
+    properties:
+      account_status:
+        type: string
+      id:
+        type: integer
+      media_type:
+        type: string
+      user_id:
+        type: string
+      watched_at:
+        type: string
+      watchlisted_at:
+        type: string
+    type: object
+  internal_tv.EpisodeWatched:
+    properties:
+      episode_id:
+        type: integer
+      episode_number:
+        type: integer
+      season_number:
+        type: integer
+      watched_at:
+        type: string
+    type: object
+  internal_tv.TVState:
+    properties:
+      account_status:
+        type: string
+      count_watched:
+        type: integer
+      episode_watched:
+        items:
+          $ref: '#/definitions/internal_tv.EpisodeWatched'
+        type: array
+      id:
+        type: integer
+      is_anime:
+        type: boolean
+      latest_state:
+        type: string
+      latest_watched:
+        type: string
+      max_watched_ep:
+        $ref: '#/definitions/internal_tv.EpisodeWatched'
+      name:
+        type: string
+      number_of_episodes:
+        type: integer
+      number_of_seasons:
+        type: integer
+      user_id:
+        type: string
+      watchlisted_at:
+        type: string
+    type: object
+host: localhost:8080
+info:
+  contact:
+    email: peera.thongtae@gmail.com
+    name: Movizius
+  description: Movie & TV Series tracking backend.
+  title: Movizius API
+  version: "1.0"
+paths:
+  /health:
+    get:
+      description: Returns service status.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_health.Status'
+      summary: Health check
+      tags:
+      - health
+  /movie/states:
+    get:
+      description: Returns all movie watchlist/history records for the authenticated
+        user.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_peera_movizius-go-service_internal_shared_response.Page-internal_movie_MovieUser'
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: List movie states
+      tags:
+      - movies
+  /tv/states:
+    get:
+      description: Returns all TV series watchlist/history records for the authenticated
+        user.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_peera_movizius-go-service_internal_shared_response.Page-internal_tv_TVState'
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: List TV states
+      tags:
+      - tv
+securityDefinitions:
+  BearerAuth:
+    description: 'JWT bearer token — format: "Bearer <token>"'
+    in: header
+    name: Authorization
+    type: apiKey
+swagger: "2.0"

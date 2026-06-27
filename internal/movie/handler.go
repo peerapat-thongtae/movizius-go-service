@@ -24,6 +24,16 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux, auth func(http.Handler) htt
 }
 
 // GetStates returns all movie tracking records for the authenticated user.
+//
+//	@Summary		List movie states
+//	@Description	Returns all movie watchlist/history records for the authenticated user.
+//	@Tags			movies
+//	@Produce		json
+//	@Security		BearerAuth
+//	@Success		200	{object}	response.Page[movie.MovieUser]
+//	@Failure		401	{object}	map[string]string
+//	@Failure		500	{object}	map[string]string
+//	@Router			/movie/states [get]
 func (h *Handler) GetStates(w http.ResponseWriter, r *http.Request) {
 	userID, ok := middleware.UserIDFromContext(r.Context())
 	if !ok {

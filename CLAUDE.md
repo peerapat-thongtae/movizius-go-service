@@ -115,3 +115,6 @@ Auth0 owns login/registration/token issuance. The API only validates JWTs.
 - Wrap errors: `fmt.Errorf("failed to create watchlist item: %w", err)`.
 - Structured logging via `pkg/logger` — no `fmt.Println`.
 - Table-driven tests preferred.
+
+## Documents
+- Swagger for all api routes

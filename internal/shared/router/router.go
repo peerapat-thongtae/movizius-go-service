@@ -5,8 +5,10 @@ import (
 	"net/http"
 
 	"github.com/MicahParks/keyfunc/v3"
+	httpSwagger "github.com/swaggo/http-swagger"
 	"go.mongodb.org/mongo-driver/mongo"
 
+	_ "github.com/peera/movizius-go-service/docs"
 	"github.com/peera/movizius-go-service/internal/health"
 	"github.com/peera/movizius-go-service/internal/movie"
 	"github.com/peera/movizius-go-service/internal/shared/middleware"
@@ -35,6 +37,7 @@ func New(deps Deps) http.Handler {
 
 	// Public routes (no auth).
 	health.NewHandler(health.NewService()).RegisterRoutes(mux)
+	mux.Handle("/swagger/", httpSwagger.WrapHandler)
 
 	// Protected routes — each feature applies auth to its own handlers.
 	movie.NewHandler(movie.NewService(movie.NewRepository(deps.DB))).RegisterRoutes(mux, auth)

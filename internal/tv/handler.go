@@ -24,6 +24,16 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux, auth func(http.Handler) htt
 }
 
 // GetStates returns all TV tracking records for the authenticated user.
+//
+//	@Summary		List TV states
+//	@Description	Returns all TV series watchlist/history records for the authenticated user.
+//	@Tags			tv
+//	@Produce		json
+//	@Security		BearerAuth
+//	@Success		200	{object}	response.Page[tv.TVState]
+//	@Failure		401	{object}	map[string]string
+//	@Failure		500	{object}	map[string]string
+//	@Router			/tv/states [get]
 func (h *Handler) GetStates(w http.ResponseWriter, r *http.Request) {
 	userID, ok := middleware.UserIDFromContext(r.Context())
 	if !ok {
