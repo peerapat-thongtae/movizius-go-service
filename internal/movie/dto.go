@@ -27,6 +27,12 @@ type DiscoverQuery struct {
 	WithoutAccountStatus []string
 }
 
+// UpsertStateRequest is the body for POST /movie.
+type UpsertStateRequest struct {
+	ID     int64  `json:"id"`
+	Status string `json:"status"`
+}
+
 // discoverQueryFromRequest parses DiscoverQuery from the request's URL query params.
 func discoverQueryFromRequest(r *http.Request) DiscoverQuery {
 	q := r.URL.Query()

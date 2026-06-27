@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/peera/movizius-go-service/pkg/tmdb"
 )
@@ -56,6 +57,89 @@ func (s *TVService) Discover(ctx context.Context, userID string, q DiscoverQuery
 	}
 
 	return results, total, nil
+}
+
+// UpsertTVState creates or updates the user's TV tracking record.
+// For status="watched" it enumerates all episodes from TMDB and populates episode_watched.
+func (s *TVService) UpsertTVState(ctx context.Context, userID string, req UpsertStateRequest) error {
+	if req.Status != "watched" && req.Status != "watchlist" {
+		return fmt.Errorf("tv service: invalid status %q", req.Status)
+	}
+
+	if req.Status == "watchlist" {
+		return s.repo.UpsertTVState(ctx, userID, req.ID, nil)
+	}
+
+	// Fetch show summary to get the season list.
+	var show struct {
+		Seasons []struct {
+			SeasonNumber int `json:"season_number"`
+		} `json:"seasons"`
+	}
+	if err := s.tmdb.GetTVDetail(ctx, req.ID, "", &show); err != nil {
+		return fmt.Errorf("tv service: get tv detail: %w", err)
+	}
+
+	// Collect non-special seasons (season_number > 0).
+	var seasonNums []int
+	for _, s := range show.Seasons {
+		if s.SeasonNumber > 0 {
+			seasonNums = append(seasonNums, s.SeasonNumber)
+		}
+	}
+
+	type seasonResult struct {
+		episodes []EpisodeWatched
+		err      error
+	}
+	results := make([]seasonResult, len(seasonNums))
+
+	var wg sync.WaitGroup
+	for i, sn := range seasonNums {
+		wg.Add(1)
+		go func(idx, seasonNum int) {
+			defer wg.Done()
+			var season struct {
+				Episodes []struct {
+					SeasonNumber  int `json:"season_number"`
+					EpisodeNumber int `json:"episode_number"`
+				} `json:"episodes"`
+			}
+			if err := s.tmdb.GetTVSeason(ctx, req.ID, seasonNum, &season); err != nil {
+				results[idx].err = err
+				return
+			}
+			now := time.Now().UTC()
+			eps := make([]EpisodeWatched, 0, len(season.Episodes))
+			for _, ep := range season.Episodes {
+				eps = append(eps, EpisodeWatched{
+					SeasonNumber:  ep.SeasonNumber,
+					EpisodeNumber: ep.EpisodeNumber,
+					WatchedAt:     now,
+				})
+			}
+			results[idx].episodes = eps
+		}(i, sn)
+	}
+	wg.Wait()
+
+	var allEpisodes []EpisodeWatched
+	for _, r := range results {
+		if r.err != nil {
+			return fmt.Errorf("tv service: fetch season episodes: %w", r.err)
+		}
+		allEpisodes = append(allEpisodes, r.episodes...)
+	}
+
+	return s.repo.UpsertTVState(ctx, userID, req.ID, allEpisodes)
+}
+
+// UpsertEpisodes adds specific episodes to the user's TV watch history.
+func (s *TVService) UpsertEpisodes(ctx context.Context, userID string, req UpsertEpisodesRequest) error {
+	if len(req.Episodes) == 0 {
+		return fmt.Errorf("tv service: episodes must not be empty")
+	}
+	return s.repo.UpsertEpisodes(ctx, userID, req)
 }
 
 // GetStates returns aggregated TV tracking records for the given user.

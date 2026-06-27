@@ -4,15 +4,18 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
 // MovieRepository is the data access contract for the movie collections.
 type MovieRepository interface {
 	FindByUserID(ctx context.Context, userID string) ([]MovieUser, error)
 	DiscoverIDs(ctx context.Context, userID string, q DiscoverQuery) (ids []int64, total int, err error)
+	UpsertState(ctx context.Context, userID string, req UpsertStateRequest) error
 }
 
 type mongoMovieRepository struct {
@@ -38,6 +41,31 @@ func (r *mongoMovieRepository) FindByUserID(ctx context.Context, userID string) 
 		return nil, fmt.Errorf("movie: decode results: %w", err)
 	}
 	return results, nil
+}
+
+func (r *mongoMovieRepository) UpsertState(ctx context.Context, userID string, req UpsertStateRequest) error {
+	now := time.Now().UTC()
+	filter := bson.M{"id": req.ID, "user_id": userID}
+
+	var update bson.M
+	if req.Status == "watched" {
+		update = bson.M{
+			"$set":         bson.M{"watched_at": now, "updated_at": now},
+			"$setOnInsert": bson.M{"watchlisted_at": now, "media_type": "movie"},
+		}
+	} else {
+		update = bson.M{
+			"$set":         bson.M{"updated_at": now},
+			"$unset":       bson.M{"watched_at": ""},
+			"$setOnInsert": bson.M{"watchlisted_at": now, "media_type": "movie"},
+		}
+	}
+
+	_, err := r.db.Collection("movie_user").UpdateOne(ctx, filter, update, options.Update().SetUpsert(true))
+	if err != nil {
+		return fmt.Errorf("movie: upsert state: %w", err)
+	}
+	return nil
 }
 
 // DiscoverIDs returns a paginated list of TMDB movie IDs matching the query,

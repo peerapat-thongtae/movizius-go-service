@@ -1,6 +1,7 @@
 package movie
 
 import (
+	"encoding/json"
 	"net/http"
 
 	"github.com/peera/movizius-go-service/internal/shared/middleware"
@@ -20,8 +21,44 @@ func NewHandler(service *MovieService) *Handler {
 // RegisterRoutes binds movie routes onto the given mux.
 // auth is applied to every protected route in this feature.
 func (h *Handler) RegisterRoutes(mux *http.ServeMux, auth func(http.Handler) http.Handler) {
+	mux.Handle("POST /movie", auth(http.HandlerFunc(h.UpsertState)))
 	mux.Handle("GET /movie/states", auth(http.HandlerFunc(h.GetStates)))
 	mux.Handle("GET /movie/discover", auth(http.HandlerFunc(h.Discover)))
+}
+
+// UpsertState creates or updates the authenticated user's movie tracking record.
+//
+//	@Summary		Upsert movie state
+//	@Description	Set watchlist or watched status for a movie.
+//	@Tags			movies
+//	@Accept			json
+//	@Produce		json
+//	@Security		BearerAuth
+//	@Param			body	body		movie.UpsertStateRequest	true	"Movie state"
+//	@Success		204		"No Content"
+//	@Failure		400		{object}	map[string]string
+//	@Failure		401		{object}	map[string]string
+//	@Failure		500		{object}	map[string]string
+//	@Router			/movie [post]
+func (h *Handler) UpsertState(w http.ResponseWriter, r *http.Request) {
+	userID, ok := middleware.UserIDFromContext(r.Context())
+	if !ok {
+		response.Error(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
+	var req UpsertStateRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		response.Error(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	if err := h.service.UpsertState(r.Context(), userID, req); err != nil {
+		response.Error(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // GetStates returns all movie tracking records for the authenticated user.

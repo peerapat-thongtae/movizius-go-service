@@ -8,12 +8,15 @@ import (
 
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
 // TVRepository is the data access contract for the tv_user collection.
 type TVRepository interface {
 	GetStatesByUserID(ctx context.Context, userID string) ([]TVState, error)
 	DiscoverIDs(ctx context.Context, userID string, q DiscoverQuery) (ids []int64, total int, err error)
+	UpsertTVState(ctx context.Context, userID string, tvID int64, episodes []EpisodeWatched) error
+	UpsertEpisodes(ctx context.Context, userID string, req UpsertEpisodesRequest) error
 }
 
 type mongoTVRepository struct {
@@ -23,6 +26,62 @@ type mongoTVRepository struct {
 // NewRepository constructs a TVRepository backed by MongoDB.
 func NewRepository(db *mongo.Database) TVRepository {
 	return &mongoTVRepository{db: db}
+}
+
+func (r *mongoTVRepository) UpsertTVState(ctx context.Context, userID string, tvID int64, episodes []EpisodeWatched) error {
+	now := time.Now().UTC()
+	filter := bson.M{"id": tvID, "user_id": userID}
+
+	set := bson.M{"updated_at": now}
+	if episodes != nil {
+		set["episode_watched"] = episodes
+	}
+
+	update := bson.M{
+		"$set":         set,
+		"$setOnInsert": bson.M{"watchlisted_at": now, "media_type": "tv"},
+	}
+
+	_, err := r.db.Collection("tv_user").UpdateOne(ctx, filter, update, options.Update().SetUpsert(true))
+	if err != nil {
+		return fmt.Errorf("tv: upsert state: %w", err)
+	}
+	return nil
+}
+
+func (r *mongoTVRepository) UpsertEpisodes(ctx context.Context, userID string, req UpsertEpisodesRequest) error {
+	now := time.Now().UTC()
+	coll := r.db.Collection("tv_user")
+
+	// Ensure the document exists before pushing episodes.
+	initFilter := bson.M{"id": req.ID, "user_id": userID}
+	initUpdate := bson.M{
+		"$set":         bson.M{"updated_at": now},
+		"$setOnInsert": bson.M{"watchlisted_at": now, "media_type": "tv", "episode_watched": bson.A{}},
+	}
+	if _, err := coll.UpdateOne(ctx, initFilter, initUpdate, options.Update().SetUpsert(true)); err != nil {
+		return fmt.Errorf("tv: upsert episodes init: %w", err)
+	}
+
+	for _, ep := range req.Episodes {
+		epFilter := bson.M{
+			"id":      req.ID,
+			"user_id": userID,
+			"episode_watched": bson.M{"$not": bson.M{"$elemMatch": bson.M{
+				"season_number":  ep.SeasonNumber,
+				"episode_number": ep.EpisodeNumber,
+			}}},
+		}
+		epUpdate := bson.M{"$push": bson.M{"episode_watched": EpisodeWatched{
+			SeasonNumber:  ep.SeasonNumber,
+			EpisodeNumber: ep.EpisodeNumber,
+			WatchedAt:     now,
+		}}}
+		if _, err := coll.UpdateOne(ctx, epFilter, epUpdate); err != nil {
+			return fmt.Errorf("tv: upsert episodes push s%de%d: %w", ep.SeasonNumber, ep.EpisodeNumber, err)
+		}
+	}
+	return nil
 }
 
 func (r *mongoTVRepository) GetStatesByUserID(ctx context.Context, userID string) ([]TVState, error) {

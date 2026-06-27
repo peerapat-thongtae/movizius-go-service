@@ -1,4 +1,3 @@
-basePath: /api
 definitions:
   github_com_peera_movizius-go-service_internal_shared_response.Page-internal_movie_MovieResponse:
     properties:
@@ -301,6 +300,13 @@ definitions:
       name:
         type: string
     type: object
+  internal_movie.UpsertStateRequest:
+    properties:
+      id:
+        type: integer
+      status:
+        type: string
+    type: object
   internal_movie.VideoResult:
     properties:
       id:
@@ -461,6 +467,13 @@ definitions:
       vote_average:
         type: number
       vote_count:
+        type: integer
+    type: object
+  internal_tv.EpisodeInput:
+    properties:
+      episode_number:
+        type: integer
+      season_number:
         type: integer
     type: object
   internal_tv.EpisodeWatched:
@@ -704,6 +717,22 @@ definitions:
       watchlisted_at:
         type: string
     type: object
+  internal_tv.UpsertEpisodesRequest:
+    properties:
+      episodes:
+        items:
+          $ref: '#/definitions/internal_tv.EpisodeInput'
+        type: array
+      id:
+        type: integer
+    type: object
+  internal_tv.UpsertStateRequest:
+    properties:
+      id:
+        type: integer
+      status:
+        type: string
+    type: object
   internal_tv.VideoResult:
     properties:
       id:
@@ -766,14 +795,8 @@ definitions:
           $ref: '#/definitions/internal_tv.WatchProviderCountry'
         type: object
     type: object
-host: localhost:8080
 info:
-  contact:
-    email: peera.thongtae@gmail.com
-    name: Movizius
-  description: Movie & TV Series tracking backend.
-  title: Movizius API
-  version: "1.0"
+  contact: {}
 paths:
   /health:
     get:
@@ -788,6 +811,46 @@ paths:
       summary: Health check
       tags:
       - health
+  /movie:
+    post:
+      consumes:
+      - application/json
+      description: Set watchlist or watched status for a movie.
+      parameters:
+      - description: Movie state
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_movie.UpsertStateRequest'
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Upsert movie state
+      tags:
+      - movies
   /movie/discover:
     get:
       description: Browse the local movie cache with TMDB-style filters and sort.
@@ -798,7 +861,7 @@ paths:
         name: page
         type: integer
       - description: popularity.desc | release_date.desc | vote_average.desc | title.asc
-          | ...
+          | watched_at.desc | watchlisted_at.desc | ...
         in: query
         name: sort_by
         type: string
@@ -982,6 +1045,46 @@ paths:
       summary: Send test notification
       tags:
       - notification
+  /tv:
+    post:
+      consumes:
+      - application/json
+      description: Set watchlist or watched status for a TV series.
+      parameters:
+      - description: TV state
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_tv.UpsertStateRequest'
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Upsert TV state
+      tags:
+      - tv
   /tv/discover:
     get:
       description: Browse the local TV cache with TMDB-style filters and sort. Each
@@ -1092,6 +1195,46 @@ paths:
       summary: Discover TV series
       tags:
       - tv
+  /tv/episodes:
+    post:
+      consumes:
+      - application/json
+      description: Mark specific episodes as watched for a TV series.
+      parameters:
+      - description: Episodes to mark as watched
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_tv.UpsertEpisodesRequest'
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Add watched episodes
+      tags:
+      - tv
   /tv/states:
     get:
       description: Returns all TV series watchlist/history records for the authenticated
@@ -1120,10 +1263,4 @@ paths:
       summary: List TV states
       tags:
       - tv
-securityDefinitions:
-  BearerAuth:
-    description: 'JWT bearer token — format: "Bearer <token>"'
-    in: header
-    name: Authorization
-    type: apiKey
 swagger: "2.0"

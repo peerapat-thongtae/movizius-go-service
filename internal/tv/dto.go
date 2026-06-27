@@ -31,6 +31,24 @@ type DiscoverQuery struct {
 	WithType             string
 }
 
+// UpsertStateRequest is the body for POST /tv.
+type UpsertStateRequest struct {
+	ID     int64  `json:"id"`
+	Status string `json:"status"`
+}
+
+// UpsertEpisodesRequest is the body for POST /tv/episodes.
+type UpsertEpisodesRequest struct {
+	ID       int64          `json:"id"`
+	Episodes []EpisodeInput `json:"episodes"`
+}
+
+// EpisodeInput identifies a single episode by season and episode number.
+type EpisodeInput struct {
+	SeasonNumber  int `json:"season_number"`
+	EpisodeNumber int `json:"episode_number"`
+}
+
 // discoverQueryFromRequest parses DiscoverQuery from the request's URL query params.
 func discoverQueryFromRequest(r *http.Request) DiscoverQuery {
 	q := r.URL.Query()

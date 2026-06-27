@@ -71,6 +71,14 @@ func (s *MovieService) Discover(ctx context.Context, userID string, q DiscoverQu
 	return results, total, nil
 }
 
+// UpsertState creates or updates the user's movie tracking record.
+func (s *MovieService) UpsertState(ctx context.Context, userID string, req UpsertStateRequest) error {
+	if req.Status != "watched" && req.Status != "watchlist" {
+		return fmt.Errorf("movie service: invalid status %q", req.Status)
+	}
+	return s.repo.UpsertState(ctx, userID, req)
+}
+
 func accountStatus(watchedAt *time.Time) *string {
 	if watchedAt != nil {
 		s := "watched"
