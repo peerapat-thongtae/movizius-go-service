@@ -7,13 +7,9 @@ import (
 	"time"
 
 	"github.com/peera/movizius-go-service/pkg/tmdb"
-	"golang.org/x/sync/semaphore"
 )
 
-const (
-	appendToResponse     = "casts,videos,watch/providers,release_dates,external_ids"
-	tmdbConcurrencyLimit = 5
-)
+const appendToResponse = "casts,videos,watch/providers,release_dates,external_ids"
 
 // MovieService holds the business logic for the movie feature.
 type MovieService struct {
@@ -41,7 +37,6 @@ func (s *MovieService) GetStates(ctx context.Context, userID string) ([]MovieUse
 // Discover returns a page of movies enriched with TMDB detail data.
 func (s *MovieService) Discover(ctx context.Context, userID string, q DiscoverQuery) ([]MovieResponse, int, error) {
 	ids, total, err := s.repo.DiscoverIDs(ctx, userID, q)
-	println("results", ids, total)
 	if err != nil {
 		return nil, 0, fmt.Errorf("movie service: discover ids: %w", err)
 	}
@@ -52,19 +47,11 @@ func (s *MovieService) Discover(ctx context.Context, userID string, q DiscoverQu
 	results := make([]MovieResponse, len(ids))
 	errs := make([]error, len(ids))
 
-	sem := semaphore.NewWeighted(tmdbConcurrencyLimit)
 	var wg sync.WaitGroup
-
 	for i, id := range ids {
 		wg.Add(1)
 		go func(idx int, movieID int64) {
 			defer wg.Done()
-			if err := sem.Acquire(ctx, 1); err != nil {
-				errs[idx] = err
-				return
-			}
-			defer sem.Release(1)
-
 			var detail MovieResponse
 			if err := s.tmdb.GetMovieDetail(ctx, movieID, appendToResponse, &detail); err != nil {
 				errs[idx] = fmt.Errorf("tmdb detail for id %d: %w", movieID, err)

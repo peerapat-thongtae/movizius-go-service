@@ -60,7 +60,7 @@ func (h *Handler) GetStates(w http.ResponseWriter, r *http.Request) {
 //	@Produce		json
 //	@Security		BearerAuth
 //	@Param			page					query		int		false	"Page number (default 1)"
-//	@Param			sort_by					query		string	false	"popularity.desc | release_date.desc | vote_average.desc | title.asc | ..."
+//	@Param			sort_by					query		string	false	"popularity.desc | release_date.desc | vote_average.desc | title.asc | watched_at.desc | watchlisted_at.desc | ..."
 //	@Param			with_genres				query		string	false	"Comma-separated genre IDs (AND logic)"
 //	@Param			without_genres			query		string	false	"Comma-separated genre IDs to exclude"
 //	@Param			primary_release_year	query		int		false	"Filter by release year"

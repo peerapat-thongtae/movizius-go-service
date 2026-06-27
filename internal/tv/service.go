@@ -6,13 +6,9 @@ import (
 	"sync"
 
 	"github.com/peera/movizius-go-service/pkg/tmdb"
-	"golang.org/x/sync/semaphore"
 )
 
-const (
-	appendToResponse     = "credits,videos,watch/providers,external_ids"
-	tmdbConcurrencyLimit = 5
-)
+const appendToResponse = "credits,videos,watch/providers,external_ids"
 
 // TVService holds the business logic for the TV feature.
 type TVService struct {
@@ -38,19 +34,11 @@ func (s *TVService) Discover(ctx context.Context, userID string, q DiscoverQuery
 	results := make([]TVResponse, len(ids))
 	errs := make([]error, len(ids))
 
-	sem := semaphore.NewWeighted(tmdbConcurrencyLimit)
 	var wg sync.WaitGroup
-
 	for i, id := range ids {
 		wg.Add(1)
 		go func(idx int, tvID int64) {
 			defer wg.Done()
-			if err := sem.Acquire(ctx, 1); err != nil {
-				errs[idx] = err
-				return
-			}
-			defer sem.Release(1)
-
 			var detail TVResponse
 			if err := s.tmdb.GetTVDetail(ctx, tvID, appendToResponse, &detail); err != nil {
 				errs[idx] = fmt.Errorf("tmdb detail for id %d: %w", tvID, err)

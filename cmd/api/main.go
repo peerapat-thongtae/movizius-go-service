@@ -29,8 +29,8 @@ import (
 	"github.com/peera/movizius-go-service/pkg/config"
 	"github.com/peera/movizius-go-service/pkg/database"
 	pkgfirebase "github.com/peera/movizius-go-service/pkg/firebase"
-	"github.com/peera/movizius-go-service/pkg/tmdb"
 	"github.com/peera/movizius-go-service/pkg/logger"
+	"github.com/peera/movizius-go-service/pkg/tmdb"
 )
 
 func main() {
@@ -52,6 +52,8 @@ func main() {
 	}
 	log.Info("mongodb connected")
 
+	db := database.DB(client, "moviedb")
+
 	jwks, err := middleware.NewJWKS(cfg.Auth0IssuerURL)
 	if err != nil {
 		log.Error("failed to fetch JWKS", "error", err)
@@ -70,7 +72,7 @@ func main() {
 	log.Info("starting server", "addr", addr)
 
 	if err := http.ListenAndServe(addr, router.New(router.Deps{
-		DB:             database.DB(client, "moviedb"),
+		DB:             db,
 		Cache:          cache.NewUpstash(cfg.UpstashURL, cfg.UpstashToken),
 		JWKS:           jwks,
 		Auth0IssuerURL: cfg.Auth0IssuerURL,

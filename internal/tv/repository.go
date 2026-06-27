@@ -44,8 +44,21 @@ func (r *mongoTVRepository) GetStatesByUserID(ctx context.Context, userID string
 // DiscoverIDs returns a paginated list of TMDB TV IDs matching the query,
 // along with the total count of matching documents.
 func (r *mongoTVRepository) DiscoverIDs(ctx context.Context, userID string, q DiscoverQuery) ([]int64, int, error) {
-	pipeline := buildDiscoverPipeline(userID, q)
-	cursor, err := r.db.Collection("tv").Aggregate(ctx, pipeline)
+	// When filtering by account_status, start from tv_user (small, user-specific set)
+	// and join into tv. This avoids scanning the full tv collection.
+	var (
+		coll     *mongo.Collection
+		pipeline bson.A
+	)
+	if q.WithAccountStatus != "" && userID != "" {
+		coll = r.db.Collection("tv_user")
+		pipeline = buildAccountStatusPipeline(userID, q)
+	} else {
+		coll = r.db.Collection("tv")
+		pipeline = buildDiscoverPipeline(userID, q)
+	}
+
+	cursor, err := coll.Aggregate(ctx, pipeline)
 	if err != nil {
 		return nil, 0, fmt.Errorf("tv: discover aggregate: %w", err)
 	}
@@ -78,13 +91,128 @@ func (r *mongoTVRepository) DiscoverIDs(ctx context.Context, userID string, q Di
 	return ids, total, nil
 }
 
+// buildDiscoverPipeline runs on the tv collection (no account_status filter).
+// When sort_by=max_watched_ep.* it still needs a user join, but as a left join
+// so all shows are retained (un-watched shows get _max_watched_at=null).
 func buildDiscoverPipeline(userID string, q DiscoverQuery) bson.A {
 	const pageSize = 20
 	skip := (q.Page - 1) * pageSize
 
 	pipeline := bson.A{}
+	pipeline = append(pipeline, bson.D{{Key: "$match", Value: tvMatchConditions(q)}})
 
-	// Stage 1: initial match on the tv collection.
+	sortByProgress := strings.HasPrefix(strings.ToLower(q.SortBy), "max_watched_ep")
+	if sortByProgress && userID != "" {
+		pipeline = append(pipeline, bson.D{{Key: "$lookup", Value: bson.D{
+			{Key: "from", Value: "tv_user"},
+			{Key: "localField", Value: "id"},
+			{Key: "foreignField", Value: "id"},
+			{Key: "pipeline", Value: bson.A{
+				bson.D{{Key: "$match", Value: bson.D{{Key: "user_id", Value: userID}}}},
+			}},
+			{Key: "as", Value: "_user"},
+		}}})
+		pipeline = append(pipeline, bson.D{{Key: "$unwind", Value: bson.D{
+			{Key: "path", Value: "$_user"},
+			{Key: "preserveNullAndEmptyArrays", Value: true},
+		}}})
+		pipeline = append(pipeline, bson.D{{Key: "$addFields", Value: bson.D{
+			{Key: "_max_watched_at", Value: bson.D{{Key: "$max", Value: bson.D{
+				{Key: "$ifNull", Value: bson.A{"$_user.episode_watched.watched_at", bson.A{}}},
+			}}}},
+		}}})
+	}
+
+	pipeline = append(pipeline, bson.D{{Key: "$sort", Value: tvSortStage(q.SortBy)}})
+	pipeline = append(pipeline, tvWatchProviderStages(q.WatchRegion, q.WithWatchProviders)...)
+	pipeline = append(pipeline, discoverFacet(skip, pageSize))
+	return pipeline
+}
+
+// buildAccountStatusPipeline runs on tv_user so it starts from a small,
+// user-scoped set. It joins tv only for the filtered user entries.
+func buildAccountStatusPipeline(userID string, q DiscoverQuery) bson.A {
+	const pageSize = 20
+	skip := (q.Page - 1) * pageSize
+
+	pipeline := bson.A{
+		// 1. Small initial set: only this user's TV entries.
+		bson.D{{Key: "$match", Value: bson.D{{Key: "user_id", Value: userID}}}},
+
+		// 2. Compute progress fields from episode_watched.
+		bson.D{{Key: "$addFields", Value: bson.D{
+			{Key: "_count_watched", Value: bson.D{{Key: "$size", Value: bson.D{
+				{Key: "$ifNull", Value: bson.A{"$episode_watched", bson.A{}}},
+			}}}},
+			{Key: "_max_ep", Value: maxEpReduceExpr("$episode_watched")},
+			{Key: "_max_watched_at", Value: bson.D{{Key: "$max", Value: "$episode_watched.watched_at"}}},
+		}}},
+
+		// 3. Join tv to get series metadata needed for account_status derivation.
+		bson.D{{Key: "$lookup", Value: bson.D{
+			{Key: "from", Value: "tv"},
+			{Key: "localField", Value: "id"},
+			{Key: "foreignField", Value: "id"},
+			{Key: "as", Value: "_tv"},
+		}}},
+		bson.D{{Key: "$unwind", Value: "$_tv"}},
+
+		// 4. Derive account_status using joined tv fields.
+		bson.D{{Key: "$addFields", Value: bson.D{
+			{Key: "_account_status", Value: bson.D{
+				{Key: "$cond", Value: bson.A{
+					bson.D{{Key: "$and", Value: bson.A{
+						bson.D{{Key: "$eq", Value: bson.A{"$_count_watched", "$_tv.number_of_episodes"}}},
+						bson.D{{Key: "$ne", Value: bson.A{"$_tv.status", "Returning Series"}}},
+					}}},
+					"watched",
+					bson.D{{Key: "$cond", Value: bson.A{
+						bson.D{{Key: "$and", Value: bson.A{
+							bson.D{{Key: "$gt", Value: bson.A{"$_count_watched", 0}}},
+							bson.D{{Key: "$eq", Value: bson.A{"$_max_ep.season_number", "$_tv.last_episode_to_air.season_number"}}},
+							bson.D{{Key: "$eq", Value: bson.A{"$_max_ep.episode_number", "$_tv.last_episode_to_air.episode_number"}}},
+						}}},
+						"wait_next_season",
+						bson.D{{Key: "$cond", Value: bson.A{
+							bson.D{{Key: "$gt", Value: bson.A{"$_count_watched", 0}}},
+							"watching",
+							"watchlist",
+						}}},
+					}}},
+				}},
+			}},
+		}}},
+
+		// 5. Filter to requested status before promoting tv fields.
+		bson.D{{Key: "$match", Value: bson.D{{Key: "_account_status", Value: q.WithAccountStatus}}}},
+
+		// 6. Promote tv fields to root; preserve user-derived fields.
+		bson.D{{Key: "$replaceRoot", Value: bson.D{
+			{Key: "newRoot", Value: bson.D{{Key: "$mergeObjects", Value: bson.A{
+				"$_tv",
+				bson.D{
+					{Key: "_account_status", Value: "$_account_status"},
+					{Key: "_max_watched_at", Value: "$_max_watched_at"},
+					{Key: "_count_watched", Value: "$_count_watched"},
+					{Key: "_max_ep", Value: "$_max_ep"},
+				},
+			}}}},
+		}}},
+	}
+
+	// 7. Optional tv filters (applied after merge so field names match tv schema).
+	if cond := tvMatchConditions(q); len(cond) > 0 {
+		pipeline = append(pipeline, bson.D{{Key: "$match", Value: cond}})
+	}
+
+	pipeline = append(pipeline, bson.D{{Key: "$sort", Value: tvSortStage(q.SortBy)}})
+	pipeline = append(pipeline, tvWatchProviderStages(q.WatchRegion, q.WithWatchProviders)...)
+	pipeline = append(pipeline, discoverFacet(skip, pageSize))
+	return pipeline
+}
+
+// tvMatchConditions builds $match conditions for fields on the tv collection.
+func tvMatchConditions(q DiscoverQuery) bson.D {
 	match := bson.D{}
 	if !q.IncludeAdult {
 		match = append(match, bson.E{Key: "adult", Value: bson.D{{Key: "$ne", Value: true}}})
@@ -144,117 +272,52 @@ func buildDiscoverPipeline(userID string, q DiscoverQuery) bson.A {
 	if q.WithType != "" {
 		match = append(match, bson.E{Key: "type", Value: q.WithType})
 	}
-	pipeline = append(pipeline, bson.D{{Key: "$match", Value: match}})
+	return match
+}
 
-	// Stage 2 (optional): join tv_user to compute _max_ep / filter by account_status.
-	// Triggered when filtering by status OR sorting by max_watched_ep.
-	sortByProgress := strings.HasPrefix(strings.ToLower(q.SortBy), "max_watched_ep")
-	needsUserJoin := userID != "" && (q.WithAccountStatus != "" || sortByProgress)
-
-	if needsUserJoin {
-		pipeline = append(pipeline, bson.D{{Key: "$lookup", Value: bson.D{
-			{Key: "from", Value: "tv_user"},
-			{Key: "localField", Value: "id"},
-			{Key: "foreignField", Value: "id"},
-			{Key: "pipeline", Value: bson.A{
-				bson.D{{Key: "$match", Value: bson.D{{Key: "user_id", Value: userID}}}},
-			}},
-			{Key: "as", Value: "_user"},
-		}}})
-
-		// Inner join when filtering by status (drops shows not in tv_user).
-		// Left join when only sorting (preserves shows not in tv_user with _max_ep=null).
-		if q.WithAccountStatus != "" {
-			pipeline = append(pipeline, bson.D{{Key: "$unwind", Value: "$_user"}})
-		} else {
-			pipeline = append(pipeline, bson.D{{Key: "$unwind", Value: bson.D{
-				{Key: "path", Value: "$_user"},
-				{Key: "preserveNullAndEmptyArrays", Value: true},
-			}}})
-		}
-
-		// $ifNull guards against missing _user (left-join case).
-		maxEpReduce := bson.D{
-			{Key: "$reduce", Value: bson.D{
-				{Key: "input", Value: bson.D{{Key: "$ifNull", Value: bson.A{"$_user.episode_watched", bson.A{}}}}},
-				{Key: "initialValue", Value: nil},
-				{Key: "in", Value: bson.D{
-					{Key: "$cond", Value: bson.A{
-						bson.D{{Key: "$or", Value: bson.A{
-							bson.D{{Key: "$gt", Value: bson.A{"$$this.season_number", "$$value.season_number"}}},
-							bson.D{{Key: "$and", Value: bson.A{
-								bson.D{{Key: "$eq", Value: bson.A{"$$this.season_number", "$$value.season_number"}}},
-								bson.D{{Key: "$gt", Value: bson.A{"$$this.episode_number", "$$value.episode_number"}}},
-							}}},
+// maxEpReduceExpr returns the $reduce expression that finds the episode with the
+// highest (season_number, episode_number) from the given array field path.
+func maxEpReduceExpr(arrayField string) bson.D {
+	return bson.D{
+		{Key: "$reduce", Value: bson.D{
+			{Key: "input", Value: bson.D{{Key: "$ifNull", Value: bson.A{arrayField, bson.A{}}}}},
+			{Key: "initialValue", Value: nil},
+			{Key: "in", Value: bson.D{
+				{Key: "$cond", Value: bson.A{
+					bson.D{{Key: "$or", Value: bson.A{
+						bson.D{{Key: "$gt", Value: bson.A{"$$this.season_number", "$$value.season_number"}}},
+						bson.D{{Key: "$and", Value: bson.A{
+							bson.D{{Key: "$eq", Value: bson.A{"$$this.season_number", "$$value.season_number"}}},
+							bson.D{{Key: "$gt", Value: bson.A{"$$this.episode_number", "$$value.episode_number"}}},
 						}}},
-						"$$this",
-						"$$value",
-					}},
+					}}},
+					"$$this",
+					"$$value",
 				}},
 			}},
-		}
-		pipeline = append(pipeline, bson.D{{Key: "$addFields", Value: bson.D{
-			{Key: "_count_watched", Value: bson.D{{Key: "$size", Value: bson.D{
-				{Key: "$ifNull", Value: bson.A{"$_user.episode_watched", bson.A{}}},
-			}}}},
-			{Key: "_max_ep", Value: maxEpReduce},
-			// Latest watched_at across all watched episodes — used for max_watched_ep sort.
-			{Key: "_max_watched_at", Value: bson.D{{Key: "$max", Value: "$_user.episode_watched.watched_at"}}},
-		}}})
-
-		if q.WithAccountStatus != "" {
-			pipeline = append(pipeline,
-				bson.D{{Key: "$addFields", Value: bson.D{
-					{Key: "_account_status", Value: bson.D{
-						{Key: "$cond", Value: bson.A{
-							// watched: all eps done and series is not still airing
-							bson.D{{Key: "$and", Value: bson.A{
-								bson.D{{Key: "$eq", Value: bson.A{"$_count_watched", "$number_of_episodes"}}},
-								bson.D{{Key: "$ne", Value: bson.A{"$status", "Returning Series"}}},
-							}}},
-							"watched",
-							bson.D{{Key: "$cond", Value: bson.A{
-								// wait_next_season: caught up to last aired ep
-								bson.D{{Key: "$and", Value: bson.A{
-									bson.D{{Key: "$gt", Value: bson.A{"$_count_watched", 0}}},
-									bson.D{{Key: "$eq", Value: bson.A{"$_max_ep.season_number", "$last_episode_to_air.season_number"}}},
-									bson.D{{Key: "$eq", Value: bson.A{"$_max_ep.episode_number", "$last_episode_to_air.episode_number"}}},
-								}}},
-								"wait_next_season",
-								bson.D{{Key: "$cond", Value: bson.A{
-									bson.D{{Key: "$gt", Value: bson.A{"$_count_watched", 0}}},
-									"watching",
-									"watchlist",
-								}}},
-							}}},
-						}},
-					}},
-				}}},
-				bson.D{{Key: "$match", Value: bson.D{{Key: "_account_status", Value: q.WithAccountStatus}}}},
-			)
-		}
+		}},
 	}
+}
 
-	// Stage 3: sort.
-	pipeline = append(pipeline, bson.D{{Key: "$sort", Value: tvSortStage(q.SortBy)}})
-
-	// Stage 4 (optional): watch provider filter.
-	if q.WatchRegion != "" && len(q.WithWatchProviders) > 0 {
-		providerField := func(t string) string {
-			return fmt.Sprintf("watch_providers.%s.%s.provider_id", q.WatchRegion, t)
-		}
-		inClause := bson.D{{Key: "$in", Value: q.WithWatchProviders}}
-		pipeline = append(pipeline, bson.D{{Key: "$match", Value: bson.D{
-			{Key: "$or", Value: bson.A{
-				bson.D{{Key: providerField("flatrate"), Value: inClause}},
-				bson.D{{Key: providerField("rent"), Value: inClause}},
-				bson.D{{Key: providerField("buy"), Value: inClause}},
-			}},
-		}}})
+func tvWatchProviderStages(region string, providers []int64) bson.A {
+	if region == "" || len(providers) == 0 {
+		return nil
 	}
+	field := func(t string) string {
+		return fmt.Sprintf("watch_providers.%s.%s.provider_id", region, t)
+	}
+	inClause := bson.D{{Key: "$in", Value: providers}}
+	return bson.A{bson.D{{Key: "$match", Value: bson.D{
+		{Key: "$or", Value: bson.A{
+			bson.D{{Key: field("flatrate"), Value: inClause}},
+			bson.D{{Key: field("rent"), Value: inClause}},
+			bson.D{{Key: field("buy"), Value: inClause}},
+		}},
+	}}}}
+}
 
-	// Stage 5: facet — count + paginated IDs.
-	pipeline = append(pipeline, bson.D{{Key: "$facet", Value: bson.D{
+func discoverFacet(skip, pageSize int) bson.D {
+	return bson.D{{Key: "$facet", Value: bson.D{
 		{Key: "metadata", Value: bson.A{
 			bson.D{{Key: "$count", Value: "total"}},
 		}},
@@ -263,9 +326,7 @@ func buildDiscoverPipeline(userID string, q DiscoverQuery) bson.A {
 			bson.D{{Key: "$limit", Value: pageSize}},
 			bson.D{{Key: "$project", Value: bson.D{{Key: "_id", Value: 0}, {Key: "id", Value: 1}}}},
 		}},
-	}}})
-
-	return pipeline
+	}}}
 }
 
 func tvSortStage(sortBy string) bson.D {
@@ -309,25 +370,7 @@ func buildStatesPipeline(userID string) bson.A {
 
 		// Compute max_watched_ep (highest season/episode) and count_watched.
 		bson.D{{Key: "$addFields", Value: bson.D{
-			{Key: "max_watched_ep", Value: bson.D{
-				{Key: "$reduce", Value: bson.D{
-					{Key: "input", Value: "$episode_watched"},
-					{Key: "initialValue", Value: nil},
-					{Key: "in", Value: bson.D{
-						{Key: "$cond", Value: bson.A{
-							bson.D{{Key: "$or", Value: bson.A{
-								bson.D{{Key: "$gt", Value: bson.A{"$$this.season_number", "$$value.season_number"}}},
-								bson.D{{Key: "$and", Value: bson.A{
-									bson.D{{Key: "$eq", Value: bson.A{"$$this.season_number", "$$value.season_number"}}},
-									bson.D{{Key: "$gt", Value: bson.A{"$$this.episode_number", "$$value.episode_number"}}},
-								}}},
-							}}},
-							"$$this",
-							"$$value",
-						}},
-					}},
-				}},
-			}},
+			{Key: "max_watched_ep", Value: maxEpReduceExpr("$episode_watched")},
 			{Key: "count_watched", Value: bson.D{{Key: "$size", Value: "$episode_watched"}}},
 		}}},
 

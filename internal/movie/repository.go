@@ -43,8 +43,21 @@ func (r *mongoMovieRepository) FindByUserID(ctx context.Context, userID string) 
 // DiscoverIDs returns a paginated list of TMDB movie IDs matching the query,
 // along with the total count of matching documents.
 func (r *mongoMovieRepository) DiscoverIDs(ctx context.Context, userID string, q DiscoverQuery) ([]int64, int, error) {
-	pipeline := buildDiscoverPipeline(userID, q)
-	cursor, err := r.db.Collection("movie").Aggregate(ctx, pipeline)
+	// When filtering by account_status, start from movie_user (small, user-specific set)
+	// and join into movie. This avoids scanning the full movie collection.
+	var (
+		coll     *mongo.Collection
+		pipeline bson.A
+	)
+	if q.WithAccountStatus != "" && userID != "" {
+		coll = r.db.Collection("movie_user")
+		pipeline = buildAccountStatusPipeline(userID, q)
+	} else {
+		coll = r.db.Collection("movie")
+		pipeline = buildDiscoverPipeline(userID, q)
+	}
+
+	cursor, err := coll.Aggregate(ctx, pipeline)
 	if err != nil {
 		return nil, 0, fmt.Errorf("movie: discover aggregate: %w", err)
 	}
@@ -77,17 +90,111 @@ func (r *mongoMovieRepository) DiscoverIDs(ctx context.Context, userID string, q
 	return ids, total, nil
 }
 
+// buildDiscoverPipeline runs on the movie collection (no account_status filter).
 func buildDiscoverPipeline(userID string, q DiscoverQuery) bson.A {
 	const pageSize = 20
 	skip := (q.Page - 1) * pageSize
 
 	pipeline := bson.A{}
+	pipeline = append(pipeline, bson.D{{Key: "$match", Value: movieMatchConditions(q)}})
 
-	// Stage 1: initial match on the movie collection.
+	// Left join movie_user when sorting by user-specific fields (watched_at, watchlisted_at).
+	if sortByUserField(q.SortBy) && userID != "" {
+		pipeline = append(pipeline,
+			bson.D{{Key: "$lookup", Value: bson.D{
+				{Key: "from", Value: "movie_user"},
+				{Key: "localField", Value: "id"},
+				{Key: "foreignField", Value: "id"},
+				{Key: "pipeline", Value: bson.A{
+					bson.D{{Key: "$match", Value: bson.D{{Key: "user_id", Value: userID}}}},
+				}},
+				{Key: "as", Value: "_user"},
+			}}},
+			bson.D{{Key: "$unwind", Value: bson.D{
+				{Key: "path", Value: "$_user"},
+				{Key: "preserveNullAndEmptyArrays", Value: true},
+			}}},
+			bson.D{{Key: "$addFields", Value: bson.D{
+				{Key: "watched_at", Value: "$_user.watched_at"},
+				{Key: "watchlisted_at", Value: "$_user.watchlisted_at"},
+			}}},
+		)
+	}
+
+	pipeline = append(pipeline, bson.D{{Key: "$sort", Value: sortStage(q.SortBy)}})
+	pipeline = append(pipeline, watchProviderStages(q.WatchRegion, q.WithWatchProviders)...)
+	pipeline = append(pipeline, discoverFacet(skip, pageSize))
+	return pipeline
+}
+
+// sortByUserField reports whether the sort requires joining movie_user.
+func sortByUserField(sortBy string) bool {
+	s := strings.ToLower(sortBy)
+	return strings.HasPrefix(s, "watched_at") || strings.HasPrefix(s, "watchlisted_at")
+}
+
+// buildAccountStatusPipeline runs on movie_user so it starts from a small,
+// user-scoped set before joining the full movie collection.
+func buildAccountStatusPipeline(userID string, q DiscoverQuery) bson.A {
+	const pageSize = 20
+	skip := (q.Page - 1) * pageSize
+
+	pipeline := bson.A{
+		// 1. Small initial set: only this user's movie entries.
+		bson.D{{Key: "$match", Value: bson.D{{Key: "user_id", Value: userID}}}},
+
+		// 2. Derive account_status from watched_at.
+		bson.D{{Key: "$addFields", Value: bson.D{
+			{Key: "_account_status", Value: bson.D{
+				{Key: "$cond", Value: bson.A{
+					bson.D{{Key: "$ifNull", Value: bson.A{"$watched_at", false}}},
+					"watched",
+					"watchlist",
+				}},
+			}},
+		}}},
+
+		// 3. Filter to requested status before the join — keeps the join set tiny.
+		bson.D{{Key: "$match", Value: bson.D{{Key: "_account_status", Value: q.WithAccountStatus}}}},
+
+		// 4. Join movie details (only for the filtered set, not the whole collection).
+		bson.D{{Key: "$lookup", Value: bson.D{
+			{Key: "from", Value: "movie"},
+			{Key: "localField", Value: "id"},
+			{Key: "foreignField", Value: "id"},
+			{Key: "as", Value: "_movie"},
+		}}},
+		bson.D{{Key: "$unwind", Value: "$_movie"}},
+
+		// 5. Promote movie fields to root; preserve user-derived fields.
+		bson.D{{Key: "$replaceRoot", Value: bson.D{
+			{Key: "newRoot", Value: bson.D{{Key: "$mergeObjects", Value: bson.A{
+				"$_movie",
+				bson.D{
+					{Key: "_account_status", Value: "$_account_status"},
+					{Key: "watched_at", Value: "$watched_at"},
+					{Key: "watchlisted_at", Value: "$watchlisted_at"},
+				},
+			}}}},
+		}}},
+	}
+
+	// 6. Optional movie filters (applied after merge so field names match movie schema).
+	if cond := movieMatchConditions(q); len(cond) > 0 {
+		pipeline = append(pipeline, bson.D{{Key: "$match", Value: cond}})
+	}
+
+	pipeline = append(pipeline, bson.D{{Key: "$sort", Value: sortStage(q.SortBy)}})
+	pipeline = append(pipeline, watchProviderStages(q.WatchRegion, q.WithWatchProviders)...)
+	pipeline = append(pipeline, discoverFacet(skip, pageSize))
+	return pipeline
+}
+
+// movieMatchConditions builds $match conditions for fields on the movie collection.
+func movieMatchConditions(q DiscoverQuery) bson.D {
 	match := bson.D{}
 	if !q.IncludeAdult {
-		// $ne: true matches both missing-field docs and explicit false — avoids
-		// excluding cached docs that were stored before the adult field was set.
+		// $ne: true matches both missing-field and explicit false docs.
 		match = append(match, bson.E{Key: "adult", Value: bson.D{{Key: "$ne", Value: true}}})
 	}
 	if len(q.WithGenres) > 0 {
@@ -133,54 +240,28 @@ func buildDiscoverPipeline(userID string, q DiscoverQuery) bson.A {
 	if q.Softcore != nil {
 		match = append(match, bson.E{Key: "softcore", Value: *q.Softcore})
 	}
-	pipeline = append(pipeline, bson.D{{Key: "$match", Value: match}})
+	return match
+}
 
-	// Stage 2 (optional): join movie_user to filter by account_status.
-	if q.WithAccountStatus != "" && userID != "" {
-		pipeline = append(pipeline,
-			bson.D{{Key: "$lookup", Value: bson.D{
-				{Key: "from", Value: "movie_user"},
-				{Key: "localField", Value: "id"},
-				{Key: "foreignField", Value: "id"},
-				{Key: "pipeline", Value: bson.A{
-					bson.D{{Key: "$match", Value: bson.D{{Key: "user_id", Value: userID}}}},
-				}},
-				{Key: "as", Value: "_user"},
-			}}},
-			bson.D{{Key: "$unwind", Value: "$_user"}},
-			bson.D{{Key: "$addFields", Value: bson.D{
-				{Key: "_account_status", Value: bson.D{
-					{Key: "$cond", Value: bson.A{
-						bson.D{{Key: "$ifNull", Value: bson.A{"$_user.watched_at", false}}},
-						"watched",
-						"watchlist",
-					}},
-				}},
-			}}},
-			bson.D{{Key: "$match", Value: bson.D{{Key: "_account_status", Value: q.WithAccountStatus}}}},
-		)
+func watchProviderStages(region string, providers []int64) bson.A {
+	if region == "" || len(providers) == 0 {
+		return nil
 	}
-
-	// Stage 3: sort.
-	pipeline = append(pipeline, bson.D{{Key: "$sort", Value: sortStage(q.SortBy)}})
-
-	// Stage 4 (optional): watch provider filter.
-	if q.WatchRegion != "" && len(q.WithWatchProviders) > 0 {
-		providerField := func(t string) string {
-			return fmt.Sprintf("watch_providers.%s.%s.provider_id", q.WatchRegion, t)
-		}
-		inClause := bson.D{{Key: "$in", Value: q.WithWatchProviders}}
-		pipeline = append(pipeline, bson.D{{Key: "$match", Value: bson.D{
-			{Key: "$or", Value: bson.A{
-				bson.D{{Key: providerField("flatrate"), Value: inClause}},
-				bson.D{{Key: providerField("rent"), Value: inClause}},
-				bson.D{{Key: providerField("buy"), Value: inClause}},
-			}},
-		}}})
+	field := func(t string) string {
+		return fmt.Sprintf("watch_providers.%s.%s.provider_id", region, t)
 	}
+	inClause := bson.D{{Key: "$in", Value: providers}}
+	return bson.A{bson.D{{Key: "$match", Value: bson.D{
+		{Key: "$or", Value: bson.A{
+			bson.D{{Key: field("flatrate"), Value: inClause}},
+			bson.D{{Key: field("rent"), Value: inClause}},
+			bson.D{{Key: field("buy"), Value: inClause}},
+		}},
+	}}}}
+}
 
-	// Stage 5: facet — count + paginated IDs.
-	pipeline = append(pipeline, bson.D{{Key: "$facet", Value: bson.D{
+func discoverFacet(skip, pageSize int) bson.D {
+	return bson.D{{Key: "$facet", Value: bson.D{
 		{Key: "metadata", Value: bson.A{
 			bson.D{{Key: "$count", Value: "total"}},
 		}},
@@ -189,9 +270,7 @@ func buildDiscoverPipeline(userID string, q DiscoverQuery) bson.A {
 			bson.D{{Key: "$limit", Value: pageSize}},
 			bson.D{{Key: "$project", Value: bson.D{{Key: "_id", Value: 0}, {Key: "id", Value: 1}}}},
 		}},
-	}}})
-
-	return pipeline
+	}}}
 }
 
 func sortStage(sortBy string) bson.D {
@@ -214,6 +293,14 @@ func sortStage(sortBy string) bson.D {
 		return bson.D{{Key: "title", Value: 1}}
 	case "title.desc":
 		return bson.D{{Key: "title", Value: -1}}
+	case "watched_at.desc":
+		return bson.D{{Key: "watched_at", Value: -1}}
+	case "watched_at.asc":
+		return bson.D{{Key: "watched_at", Value: 1}}
+	case "watchlisted_at.desc":
+		return bson.D{{Key: "watchlisted_at", Value: -1}}
+	case "watchlisted_at.asc":
+		return bson.D{{Key: "watchlisted_at", Value: 1}}
 	default: // popularity.desc
 		return bson.D{{Key: "popularity", Value: -1}}
 	}
