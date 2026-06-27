@@ -37,7 +37,16 @@ func New(deps Deps) http.Handler {
 
 	// Public routes (no auth).
 	health.NewHandler(health.NewService()).RegisterRoutes(mux)
-	mux.Handle("/swagger/", httpSwagger.WrapHandler)
+	// The outer mux strips /api from r.URL.Path but not r.RequestURI.
+	// httpSwagger uses r.RequestURI to detect its prefix, then strips it from r.URL.Path —
+	// if they diverge the asset paths don't match and return 404.
+	// Cloning the request with RequestURI = r.URL.RequestURI() re-aligns them.
+	swaggerUI := httpSwagger.Handler(httpSwagger.URL("/api/swagger/doc.json"))
+	mux.Handle("/swagger/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		r2 := r.Clone(r.Context())
+		r2.RequestURI = r.URL.RequestURI()
+		swaggerUI(w, r2)
+	}))
 
 	// Protected routes — each feature applies auth to its own handlers.
 	movie.NewHandler(movie.NewService(movie.NewRepository(deps.DB))).RegisterRoutes(mux, auth)
