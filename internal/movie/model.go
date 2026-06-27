@@ -39,5 +39,5 @@ type MovieUser struct {
 	WatchlistedAt time.Time          `bson:"watchlisted_at"           json:"watchlisted_at"`
 	WatchedAt     *time.Time         `bson:"watched_at,omitempty"     json:"watched_at,omitempty"`
 	UpdatedAt     time.Time          `bson:"updated_at"               json:"-"`
-	AccountStatus *string            `bson:"account_status,omitempty" json:"account_status"`
+	AccountStatus *string            `bson:"account_status,omitempty" json:"account_status,omitempty"`
 }
