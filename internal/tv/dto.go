@@ -27,8 +27,10 @@ type DiscoverQuery struct {
 	WithoutAccountStatus []string
 	WithNetworks         []int64
 	IsAnime              *bool
-	WithStatus           string
-	WithType             string
+	WithStatus              string
+	WithType                string
+	NextEpisodeAirDateGte   string
+	NextEpisodeAirDateLte   string
 }
 
 // UpsertStateRequest is the body for POST /tv.
@@ -73,8 +75,10 @@ func discoverQueryFromRequest(r *http.Request) DiscoverQuery {
 		WithAccountStatus:    stringListParam(q.Get("with_account_status")),
 		WithoutAccountStatus: stringListParam(q.Get("without_account_status")),
 		WithNetworks:         int64ListParam(q.Get("with_networks")),
-		WithStatus:           q.Get("with_status"),
-		WithType:             q.Get("with_type"),
+		WithStatus:            q.Get("with_status"),
+		WithType:              q.Get("with_type"),
+		NextEpisodeAirDateGte: q.Get("with_next_episode_air_date.gte"),
+		NextEpisodeAirDateLte: q.Get("with_next_episode_air_date.lte"),
 	}
 
 	if raw := q.Get("softcore"); raw != "" {

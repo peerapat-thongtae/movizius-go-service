@@ -124,9 +124,11 @@ func (h *Handler) UpsertEpisodes(w http.ResponseWriter, r *http.Request) {
 //	@Param			with_account_status		query		string	false	"watchlist | watching | waiting_next_ep | watched"
 //	@Param			with_networks			query		string	false	"Comma-separated network IDs"
 //	@Param			is_anime				query		bool	false	"Filter by anime flag"
-//	@Param			with_status				query		string	false	"TV series status (e.g. Returning Series, Ended)"
-//	@Param			with_type				query		string	false	"TV series type (e.g. Scripted, Documentary)"
-//	@Success		200						{object}	response.Page[tv.TVResponse]
+//	@Param			with_status						query		string	false	"TV series status (e.g. Returning Series, Ended)"
+//	@Param			with_type						query		string	false	"TV series type (e.g. Scripted, Documentary)"
+//	@Param			with_next_episode_air_date.gte	query		string	false	"Next episode air date >= (YYYY-MM-DD or RFC3339)"
+//	@Param			with_next_episode_air_date.lte	query		string	false	"Next episode air date <= (YYYY-MM-DD or RFC3339)"
+//	@Success		200								{object}	response.Page[tv.TVResponse]
 //	@Failure		401						{object}	map[string]string
 //	@Failure		500						{object}	map[string]string
 //	@Router			/tv/discover [get]

@@ -448,6 +448,41 @@ func tvMatchConditions(q DiscoverQuery) bson.D {
 	if q.WithType != "" {
 		match = append(match, bson.E{Key: "type", Value: q.WithType})
 	}
+	if q.NextEpisodeAirDateGte != "" || q.NextEpisodeAirDateLte != "" {
+		// Normalize both the stored field and the input params to full RFC3339 before
+		// comparing, because the DB may store either "YYYY-MM-DD" or "YYYY-MM-DDT...Z".
+		// $ifNull guards against missing/null next_episode_to_air.air_date.
+		safeField := bson.D{{Key: "$ifNull", Value: bson.A{"$next_episode_to_air.air_date", ""}}}
+		normalizedField := bson.D{{Key: "$cond", Value: bson.A{
+			bson.D{{Key: "$eq", Value: bson.A{bson.D{{Key: "$strLenCP", Value: safeField}}, 10}}},
+			bson.D{{Key: "$concat", Value: bson.A{"$next_episode_to_air.air_date", "T00:00:00Z"}}},
+			safeField,
+		}}}
+
+		var exprs bson.A
+		if q.NextEpisodeAirDateGte != "" {
+			v := q.NextEpisodeAirDateGte
+			if len(v) == 10 {
+				v += "T00:00:00Z"
+			}
+			exprs = append(exprs, bson.D{{Key: "$gte", Value: bson.A{normalizedField, v}}})
+		}
+		if q.NextEpisodeAirDateLte != "" {
+			v := q.NextEpisodeAirDateLte
+			if len(v) == 10 {
+				v += "T23:59:00Z"
+			}
+			exprs = append(exprs, bson.D{{Key: "$lte", Value: bson.A{normalizedField, v}}})
+		}
+
+		var exprCond any
+		if len(exprs) == 1 {
+			exprCond = exprs[0]
+		} else {
+			exprCond = bson.D{{Key: "$and", Value: exprs}}
+		}
+		match = append(match, bson.E{Key: "$expr", Value: exprCond})
+	}
 	return match
 }
 
