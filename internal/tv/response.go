@@ -3,7 +3,40 @@ package tv
 import (
 	"encoding/json"
 	"time"
+
+	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/bson/bsontype"
 )
+
+// FlexAirDate stores an air_date that may arrive as "YYYY-MM-DD" or a full
+// RFC3339 timestamp. It always marshals to a full timestamp in JSON responses.
+type FlexAirDate string
+
+func (d FlexAirDate) MarshalJSON() ([]byte, error) {
+	s := string(d)
+	if len(s) == 10 {
+		s = s + "T00:00:00Z"
+	}
+	return json.Marshal(s)
+}
+
+func (d *FlexAirDate) UnmarshalJSON(b []byte) error {
+	var s string
+	if err := json.Unmarshal(b, &s); err != nil {
+		return err
+	}
+	*d = FlexAirDate(s)
+	return nil
+}
+
+func (d *FlexAirDate) UnmarshalBSONValue(t bsontype.Type, raw []byte) error {
+	var s string
+	if err := (bson.RawValue{Type: t, Value: raw}).Unmarshal(&s); err != nil {
+		return err
+	}
+	*d = FlexAirDate(s)
+	return nil
+}
 
 // TV represents a TV series document in the tv collection (TMDB metadata cache).
 // JSON keys mirror the TMDB API / Dart model (snake_case); BSON keys mirror MongoDB storage.
@@ -54,10 +87,10 @@ type TVResponse struct {
 // StateEpisode is a trimmed episode shape used in TVStateResponse (last/next episode to air).
 type StateEpisode struct {
 	ID            int64  `bson:"id"             json:"id"`
-	AirDate       string `bson:"air_date"       json:"air_date"`
-	EpisodeNumber int    `bson:"episode_number" json:"episode_number"`
-	EpisodeType   string `bson:"episode_type"   json:"episode_type"`
-	SeasonNumber  int    `bson:"season_number"  json:"season_number"`
+	AirDate       FlexAirDate `bson:"air_date"       json:"air_date"`
+	EpisodeNumber int         `bson:"episode_number" json:"episode_number"`
+	EpisodeType   string      `bson:"episode_type"   json:"episode_type"`
+	SeasonNumber  int         `bson:"season_number"  json:"season_number"`
 }
 
 // StateSeason is a trimmed season shape used in TVStateResponse.
@@ -132,10 +165,10 @@ type Episode struct {
 	Overview       string  `bson:"overview"        json:"overview"`
 	VoteAverage    float64 `bson:"vote_average"    json:"vote_average"`
 	VoteCount      int     `bson:"vote_count"      json:"vote_count"`
-	AirDate        string  `bson:"air_date"        json:"air_date"`
-	EpisodeNumber  int     `bson:"episode_number"  json:"episode_number"`
-	EpisodeType    string  `bson:"episode_type"    json:"episode_type"`
-	ProductionCode string  `bson:"production_code" json:"production_code"`
+	AirDate        FlexAirDate `bson:"air_date"        json:"air_date"`
+	EpisodeNumber  int         `bson:"episode_number"  json:"episode_number"`
+	EpisodeType    string      `bson:"episode_type"    json:"episode_type"`
+	ProductionCode string      `bson:"production_code" json:"production_code"`
 	Runtime        *int    `bson:"runtime"         json:"runtime"`
 	SeasonNumber   int     `bson:"season_number"   json:"season_number"`
 	ShowID         int64   `bson:"show_id"         json:"show_id"`
