@@ -31,6 +31,7 @@ import (
 	pkgfirebase "github.com/peera/movizius-go-service/pkg/firebase"
 	"github.com/peera/movizius-go-service/pkg/logger"
 	"github.com/peera/movizius-go-service/pkg/tmdb"
+	"github.com/peera/movizius-go-service/pkg/tvmaze"
 )
 
 func main() {
@@ -79,6 +80,7 @@ func main() {
 		Auth0Audience:  cfg.Auth0Audience,
 		Firebase:       firebaseApp,
 		TMDB:           tmdb.New(cfg.TMDBAccessToken),
+		TVMaze:         tvmaze.New(""),
 	})); err != nil {
 		log.Error("server stopped", "error", err)
 		os.Exit(1)

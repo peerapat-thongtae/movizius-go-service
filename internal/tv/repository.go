@@ -19,6 +19,7 @@ type TVRepository interface {
 	UpsertEpisodes(ctx context.Context, userID string, req UpsertEpisodesRequest) error
 	UpsertDetail(ctx context.Context, data TVResponse) error
 	DeleteByTMDBID(ctx context.Context, id int64) error
+	UpdateNextEpisodeAirDates(ctx context.Context, updates []NextEpisodeAirDateUpdate) error
 }
 
 type mongoTVRepository struct {
@@ -98,6 +99,33 @@ func (r *mongoTVRepository) DeleteByTMDBID(ctx context.Context, id int64) error 
 	return nil
 }
 
+func (r *mongoTVRepository) UpdateNextEpisodeAirDates(ctx context.Context, updates []NextEpisodeAirDateUpdate) error {
+	if len(updates) == 0 {
+		return nil
+	}
+	now := time.Now().UTC()
+	models := make([]mongo.WriteModel, 0, len(updates))
+	for _, u := range updates {
+		if u.ImdbID == "" {
+			continue
+		}
+		filter := bson.M{
+			"imdb_id":                              u.ImdbID,
+			"next_episode_to_air.season_number":  u.SeasonNumber,
+			"next_episode_to_air.episode_number": u.EpisodeNumber,
+		}
+		update := bson.M{"$set": bson.M{"next_episode_to_air.air_date": u.AirDate, "updated_at": now}}
+		models = append(models, mongo.NewUpdateOneModel().SetFilter(filter).SetUpdate(update).SetUpsert(false))
+	}
+	if len(models) == 0 {
+		return nil
+	}
+	if _, err := r.db.Collection("tv").BulkWrite(ctx, models); err != nil {
+		return fmt.Errorf("tv: bulk update next_episode air_date: %w", err)
+	}
+	return nil
+}
+
 func (r *mongoTVRepository) UpsertDetail(ctx context.Context, data TVResponse) error {
 	now := time.Now().UTC()
 	filter := bson.M{"id": data.ID}
@@ -138,7 +166,7 @@ func (r *mongoTVRepository) UpsertDetail(ctx context.Context, data TVResponse) e
 			"credits":              data.Credits,
 			"external_ids":         data.ExternalIDs,
 			"videos":               data.Videos,
-			"watch_providers":      data.WatchProviders,
+			"watch_providers":      extractTHProviderIDs(data.WatchProviders),
 			"media_type":           "tv",
 			"updated_at":           now,
 		},
@@ -447,21 +475,35 @@ func maxEpReduceExpr(arrayField string) bson.D {
 	}
 }
 
-func tvWatchProviderStages(region string, providers []int64) bson.A {
-	if region == "" || len(providers) == 0 {
+func tvWatchProviderStages(_ string, providers []int64) bson.A {
+	if len(providers) == 0 {
 		return nil
 	}
-	field := func(t string) string {
-		return fmt.Sprintf("watch_providers.%s.%s.provider_id", region, t)
-	}
-	inClause := bson.D{{Key: "$in", Value: providers}}
-	return bson.A{bson.D{{Key: "$match", Value: bson.D{
-		{Key: "$or", Value: bson.A{
-			bson.D{{Key: field("flatrate"), Value: inClause}},
-			bson.D{{Key: field("rent"), Value: inClause}},
-			bson.D{{Key: field("buy"), Value: inClause}},
-		}},
+	return bson.A{bson.D{{Key: "$match", Value: bson.M{
+		"watch_providers": bson.M{"$in": providers},
 	}}}}
+}
+
+// extractTHProviderIDs returns a deduplicated slice of provider IDs from the TH country entry.
+func extractTHProviderIDs(wp *WatchProviders) []int64 {
+	if wp == nil {
+		return nil
+	}
+	th := wp.Results["TH"]
+	if th == nil {
+		return nil
+	}
+	seen := make(map[int64]struct{})
+	var ids []int64
+	for _, list := range [][]Flatrate{th.Flatrate, th.Rent, th.Buy, th.Ads, th.Free} {
+		for _, f := range list {
+			if _, ok := seen[f.ProviderID]; !ok {
+				seen[f.ProviderID] = struct{}{}
+				ids = append(ids, f.ProviderID)
+			}
+		}
+	}
+	return ids
 }
 
 func discoverFacet(skip, pageSize int) bson.D {

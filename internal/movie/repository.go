@@ -115,7 +115,7 @@ func (r *mongoMovieRepository) UpsertDetail(ctx context.Context, data MovieRespo
 			"external_ids":         data.ExternalIDs,
 			"casts":                data.Casts,
 			"videos":               data.Videos,
-			"watch_providers":      data.WatchProviders,
+			"watch_providers":      extractTHProviderIDs(data.WatchProviders),
 			"media_type":           "movie",
 			"updated_at":           now,
 		},
@@ -347,21 +347,35 @@ func movieMatchConditions(q DiscoverQuery) bson.D {
 	return match
 }
 
-func watchProviderStages(region string, providers []int64) bson.A {
-	if region == "" || len(providers) == 0 {
+func watchProviderStages(_ string, providers []int64) bson.A {
+	if len(providers) == 0 {
 		return nil
 	}
-	field := func(t string) string {
-		return fmt.Sprintf("watch_providers.%s.%s.provider_id", region, t)
-	}
-	inClause := bson.D{{Key: "$in", Value: providers}}
-	return bson.A{bson.D{{Key: "$match", Value: bson.D{
-		{Key: "$or", Value: bson.A{
-			bson.D{{Key: field("flatrate"), Value: inClause}},
-			bson.D{{Key: field("rent"), Value: inClause}},
-			bson.D{{Key: field("buy"), Value: inClause}},
-		}},
+	return bson.A{bson.D{{Key: "$match", Value: bson.M{
+		"watch_providers": bson.M{"$in": providers},
 	}}}}
+}
+
+// extractTHProviderIDs returns a deduplicated slice of provider IDs from the TH country entry.
+func extractTHProviderIDs(wp *WatchProviders) []int64 {
+	if wp == nil {
+		return nil
+	}
+	th := wp.Results["TH"]
+	if th == nil {
+		return nil
+	}
+	seen := make(map[int64]struct{})
+	var ids []int64
+	for _, list := range [][]Flatrate{th.Flatrate, th.Rent, th.Buy, th.Ads, th.Free} {
+		for _, f := range list {
+			if _, ok := seen[f.ProviderID]; !ok {
+				seen[f.ProviderID] = struct{}{}
+				ids = append(ids, f.ProviderID)
+			}
+		}
+	}
+	return ids
 }
 
 func discoverFacet(skip, pageSize int) bson.D {

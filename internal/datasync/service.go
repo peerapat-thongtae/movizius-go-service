@@ -12,6 +12,7 @@ import (
 	"github.com/peera/movizius-go-service/internal/movie"
 	"github.com/peera/movizius-go-service/internal/tv"
 	"github.com/peera/movizius-go-service/pkg/tmdb"
+	"github.com/peera/movizius-go-service/pkg/tvmaze"
 )
 
 // SyncService orchestrates chunked sync jobs for movie and TV metadata.
@@ -20,11 +21,12 @@ type SyncService struct {
 	movieSync *movie.MovieSyncService
 	tvSync    *tv.TVSyncService
 	tmdb      *tmdb.Client
+	tvmaze    *tvmaze.Client
 }
 
 // NewService constructs a SyncService.
-func NewService(repo SyncRepository, movieSync *movie.MovieSyncService, tvSync *tv.TVSyncService, tmdbClient *tmdb.Client) *SyncService {
-	return &SyncService{repo: repo, movieSync: movieSync, tvSync: tvSync, tmdb: tmdbClient}
+func NewService(repo SyncRepository, movieSync *movie.MovieSyncService, tvSync *tv.TVSyncService, tmdbClient *tmdb.Client, tvmazeClient *tvmaze.Client) *SyncService {
+	return &SyncService{repo: repo, movieSync: movieSync, tvSync: tvSync, tmdb: tmdbClient, tvmaze: tvmazeClient}
 }
 
 // SyncFromUserTracked syncs TMDB metadata for IDs in movie_user or tv_user using offset paging.
@@ -327,6 +329,41 @@ func extractIDs(page *tmdb.TrendingPage) []int64 {
 
 func isNotFound(err error) bool {
 	return errors.Is(err, mongo.ErrNoDocuments)
+}
+
+// SyncTVMazeSchedule fetches the full TVMaze airing schedule and updates
+// next_episode_to_air.air_date in the tv collection for matching records.
+func (s *SyncService) SyncTVMazeSchedule(ctx context.Context) (*SyncResult, error) {
+	var entries []tvmaze.ScheduleEntry
+	if err := s.tvmaze.GetAiringFullSchedule(ctx, "", &entries); err != nil {
+		return nil, fmt.Errorf("datasync: tvmaze schedule: %w", err)
+	}
+
+	updates := make([]tv.NextEpisodeAirDateUpdate, 0, len(entries))
+	for _, e := range entries {
+		if e.Embedded.Show.Externals.Imdb == nil || *e.Embedded.Show.Externals.Imdb == "" {
+			continue
+		}
+		updates = append(updates, tv.NextEpisodeAirDateUpdate{
+			ImdbID:        *e.Embedded.Show.Externals.Imdb,
+			SeasonNumber:  e.Season,
+			EpisodeNumber: e.Number,
+			AirDate:       e.Airstamp.UTC().Format(time.RFC3339),
+		})
+	}
+
+	if err := s.tvSync.UpdateNextEpisodeAirDates(ctx, updates); err != nil {
+		return nil, fmt.Errorf("datasync: tvmaze schedule update: %w", err)
+	}
+
+	return &SyncResult{
+		SyncKey:   "sync_tv_tvmaze_schedule",
+		Source:    "tvmaze",
+		Total:     len(entries),
+		Processed: len(updates),
+		Remaining: 0,
+		Status:    StatusCompleted,
+	}, nil
 }
 
 // toInt64 converts BSON-decoded numeric types to int64.

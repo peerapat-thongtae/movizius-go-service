@@ -31,7 +31,7 @@ type TV struct {
 	Seasons             []any              `bson:"seasons"                    json:"seasons"`
 	LastEpisodeToAir    any                `bson:"last_episode_to_air"        json:"last_episode_to_air"`
 	NextEpisodeToAir    any                `bson:"next_episode_to_air"        json:"next_episode_to_air"`
-	WatchProviders      []any              `bson:"watch_providers"            json:"watch_providers"`
+	WatchProviders      []int64            `bson:"watch_providers"            json:"watch_providers"`
 	UpdatedAt           time.Time          `bson:"updated_at"                 json:"-"`
 }
 
@@ -59,6 +59,14 @@ type TVState struct {
 	AccountStatus    string           `bson:"account_status"      json:"account_status"`
 	LatestState      *time.Time       `bson:"latest_state"        json:"latest_state,omitempty"`
 	MaxWatchedEp     *EpisodeWatched  `bson:"max_watched_ep"      json:"max_watched_ep,omitempty"`
+}
+
+// NextEpisodeAirDateUpdate carries the fields needed to patch next_episode_to_air.air_date.
+type NextEpisodeAirDateUpdate struct {
+	ImdbID        string
+	SeasonNumber  int
+	EpisodeNumber int
+	AirDate       string // RFC3339 timestamp from TVMaze airstamp
 }
 
 // TVUser represents a user's tracking record for a TV series in the tv_user collection.

@@ -25,6 +25,7 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux, auth func(http.Handler) htt
 	mux.Handle("POST /sync/tv/tracked", auth(http.HandlerFunc(h.SyncTVUserTracked)))
 	mux.Handle("POST /sync/movie/trending", auth(http.HandlerFunc(h.SyncTrendingMovie)))
 	mux.Handle("POST /sync/tv/trending", auth(http.HandlerFunc(h.SyncTrendingTV)))
+	mux.Handle("POST /sync/tv/tvmaze-schedule", auth(http.HandlerFunc(h.SyncTVMazeSchedule)))
 }
 
 // SyncMovieUserTracked syncs TMDB metadata for movie IDs tracked in movie_user.
@@ -68,6 +69,16 @@ func (h *Handler) SyncTrendingTV(w http.ResponseWriter, r *http.Request) {
 		timeWindow = "week"
 	}
 	result, err := h.service.SyncFromTMDBTrending(r.Context(), "sync_trending_tv", "tv", timeWindow, parseFrequency(r), parseLimit(r))
+	if err != nil {
+		response.Error(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	response.Success(w, http.StatusOK, result)
+}
+
+// SyncTVMazeSchedule fetches the TVMaze full schedule and updates next_episode_to_air.air_date.
+func (h *Handler) SyncTVMazeSchedule(w http.ResponseWriter, r *http.Request) {
+	result, err := h.service.SyncTVMazeSchedule(r.Context())
 	if err != nil {
 		response.Error(w, http.StatusInternalServerError, err.Error())
 		return

@@ -20,6 +20,11 @@ func NewSyncService(repo TVRepository, tmdb *tmdb.Client) *TVSyncService {
 	return &TVSyncService{repo: repo, tmdb: tmdb}
 }
 
+// UpdateNextEpisodeAirDates patches next_episode_to_air.air_date for matched records.
+func (s *TVSyncService) UpdateNextEpisodeAirDates(ctx context.Context, updates []NextEpisodeAirDateUpdate) error {
+	return s.repo.UpdateNextEpisodeAirDates(ctx, updates)
+}
+
 // Sync fetches TMDB detail for each ID in parallel and upserts into the tv collection.
 func (s *TVSyncService) Sync(ctx context.Context, ids []int64) error {
 	if len(ids) == 0 {

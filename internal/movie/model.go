@@ -26,7 +26,7 @@ type Movie struct {
 	Runtime             *int               `bson:"runtime,omitempty"            json:"runtime,omitempty"`
 	VoteAverage         *float64           `bson:"vote_average"                 json:"vote_average"`
 	VoteCount           *int64             `bson:"vote_count"                   json:"vote_count"`
-	WatchProviders      []any              `bson:"watch_providers"              json:"watch_providers"`
+	WatchProviders      []int64            `bson:"watch_providers"              json:"watch_providers"`
 	UpdatedAt           time.Time          `bson:"updated_at"                   json:"-"`
 }
 

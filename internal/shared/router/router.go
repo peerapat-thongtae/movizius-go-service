@@ -19,6 +19,7 @@ import (
 	"github.com/peera/movizius-go-service/internal/tv"
 	"github.com/peera/movizius-go-service/pkg/cache"
 	"github.com/peera/movizius-go-service/pkg/tmdb"
+	"github.com/peera/movizius-go-service/pkg/tvmaze"
 )
 
 // Deps holds the shared infrastructure dependencies injected into feature handlers.
@@ -30,6 +31,7 @@ type Deps struct {
 	Auth0Audience  string
 	Firebase       *firebase.App
 	TMDB           *tmdb.Client
+	TVMaze         *tvmaze.Client
 }
 
 // New constructs the application handler with all feature routes registered under /api.
@@ -67,6 +69,7 @@ func New(deps Deps) http.Handler {
 		movie.NewSyncService(movieRepo, deps.TMDB),
 		tv.NewSyncService(tvRepo, deps.TMDB),
 		deps.TMDB,
+		deps.TVMaze,
 	)).RegisterRoutes(mux, auth)
 
 	// Mount the inner mux under /api/. StripPrefix removes /api before the inner
