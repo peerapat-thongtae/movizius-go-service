@@ -80,7 +80,7 @@ type TVResponse struct {
 	MediaType           string              `bson:"media_type"             json:"media_type,omitempty"`
 	ImdbID              string              `bson:"imdb_id"                json:"imdb_id,omitempty"`
 	IsAnime             bool                `bson:"is_anime"               json:"is_anime"`
-	WatchProviders      *WatchProviders     `bson:"watch_providers"        json:"watch_providers"`
+	WatchProviders      *WatchProviderCountry `bson:"watch_providers"        json:"watch_providers"`
 	UpdatedAt           time.Time           `bson:"updated_at"             json:"-"`
 }
 
@@ -138,7 +138,7 @@ func (r *TVResponse) UnmarshalJSON(data []byte) error {
 	}
 	*r = TVResponse(raw.Alias)
 	if raw.WatchProvidersIn != nil {
-		r.WatchProviders = raw.WatchProvidersIn
+		r.WatchProviders = raw.WatchProvidersIn.Results["TH"]
 	}
 	return nil
 }
@@ -283,14 +283,3 @@ type Flatrate struct {
 	DisplayPriority int    `bson:"display_priority" json:"display_priority"`
 }
 
-// filterTHProviders returns a new WatchProviders containing only the "TH" entry.
-func filterTHProviders(wp *WatchProviders) *WatchProviders {
-	if wp == nil {
-		return nil
-	}
-	th := wp.Results["TH"]
-	if th == nil {
-		return &WatchProviders{Results: map[string]*WatchProviderCountry{}}
-	}
-	return &WatchProviders{Results: map[string]*WatchProviderCountry{"TH": th}}
-}

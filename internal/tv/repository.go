@@ -20,6 +20,7 @@ type TVRepository interface {
 	UpsertDetail(ctx context.Context, data TVResponse) error
 	DeleteByTMDBID(ctx context.Context, id int64) error
 	UpdateNextEpisodeAirDates(ctx context.Context, updates []NextEpisodeAirDateUpdate) error
+	GetNextEpisodeAirDatesByIDs(ctx context.Context, ids []int64) (map[int64]string, error)
 }
 
 type mongoTVRepository struct {
@@ -126,6 +127,35 @@ func (r *mongoTVRepository) UpdateNextEpisodeAirDates(ctx context.Context, updat
 	return nil
 }
 
+func (r *mongoTVRepository) GetNextEpisodeAirDatesByIDs(ctx context.Context, ids []int64) (map[int64]string, error) {
+	cursor, err := r.db.Collection("tv").Find(ctx,
+		bson.M{"id": bson.M{"$in": ids}},
+		options.Find().SetProjection(bson.M{"_id": 0, "id": 1, "next_episode_to_air.air_date": 1}),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("tv: get next episode air dates: %w", err)
+	}
+	defer cursor.Close(ctx)
+
+	var docs []struct {
+		ID               int64 `bson:"id"`
+		NextEpisodeToAir *struct {
+			AirDate string `bson:"air_date"`
+		} `bson:"next_episode_to_air"`
+	}
+	if err := cursor.All(ctx, &docs); err != nil {
+		return nil, fmt.Errorf("tv: decode next episode air dates: %w", err)
+	}
+
+	result := make(map[int64]string, len(docs))
+	for _, d := range docs {
+		if d.NextEpisodeToAir != nil && d.NextEpisodeToAir.AirDate != "" {
+			result[d.ID] = d.NextEpisodeToAir.AirDate
+		}
+	}
+	return result, nil
+}
+
 func (r *mongoTVRepository) UpsertDetail(ctx context.Context, data TVResponse) error {
 	now := time.Now().UTC()
 	filter := bson.M{"id": data.ID}
@@ -166,7 +196,7 @@ func (r *mongoTVRepository) UpsertDetail(ctx context.Context, data TVResponse) e
 			"credits":              data.Credits,
 			"external_ids":         data.ExternalIDs,
 			"videos":               data.Videos,
-			"watch_providers":      extractTHProviderIDs(data.WatchProviders),
+			"watch_providers":      extractProviderIDs(data.WatchProviders),
 			"media_type":           "tv",
 			"updated_at":           now,
 		},
@@ -519,18 +549,14 @@ func tvWatchProviderStages(_ string, providers []int64) bson.A {
 	}}}}
 }
 
-// extractTHProviderIDs returns a deduplicated slice of provider IDs from the TH country entry.
-func extractTHProviderIDs(wp *WatchProviders) []int64 {
-	if wp == nil {
-		return nil
-	}
-	th := wp.Results["TH"]
-	if th == nil {
+// extractProviderIDs returns a deduplicated slice of provider IDs from a WatchProviderCountry.
+func extractProviderIDs(c *WatchProviderCountry) []int64 {
+	if c == nil {
 		return nil
 	}
 	seen := make(map[int64]struct{})
 	var ids []int64
-	for _, list := range [][]Flatrate{th.Flatrate, th.Rent, th.Buy, th.Ads, th.Free} {
+	for _, list := range [][]Flatrate{c.Flatrate, c.Rent, c.Buy, c.Ads, c.Free} {
 		for _, f := range list {
 			if _, ok := seen[f.ProviderID]; !ok {
 				seen[f.ProviderID] = struct{}{}

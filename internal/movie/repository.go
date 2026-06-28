@@ -115,7 +115,7 @@ func (r *mongoMovieRepository) UpsertDetail(ctx context.Context, data MovieRespo
 			"external_ids":         data.ExternalIDs,
 			"casts":                data.Casts,
 			"videos":               data.Videos,
-			"watch_providers":      extractTHProviderIDs(data.WatchProviders),
+			"watch_providers":      extractProviderIDs(data.WatchProviders),
 			"media_type":           "movie",
 			"updated_at":           now,
 		},
@@ -356,18 +356,14 @@ func watchProviderStages(_ string, providers []int64) bson.A {
 	}}}}
 }
 
-// extractTHProviderIDs returns a deduplicated slice of provider IDs from the TH country entry.
-func extractTHProviderIDs(wp *WatchProviders) []int64 {
-	if wp == nil {
-		return nil
-	}
-	th := wp.Results["TH"]
-	if th == nil {
+// extractProviderIDs returns a deduplicated slice of provider IDs from a WatchProviderCountry.
+func extractProviderIDs(c *WatchProviderCountry) []int64 {
+	if c == nil {
 		return nil
 	}
 	seen := make(map[int64]struct{})
 	var ids []int64
-	for _, list := range [][]Flatrate{th.Flatrate, th.Rent, th.Buy, th.Ads, th.Free} {
+	for _, list := range [][]Flatrate{c.Flatrate, c.Rent, c.Buy, c.Ads, c.Free} {
 		for _, f := range list {
 			if _, ok := seen[f.ProviderID]; !ok {
 				seen[f.ProviderID] = struct{}{}

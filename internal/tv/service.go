@@ -49,7 +49,6 @@ func (s *TVService) Discover(ctx context.Context, userID string, q DiscoverQuery
 			if detail.ImdbID == "" && detail.ExternalIDs != nil {
 				detail.ImdbID = detail.ExternalIDs.ImdbID
 			}
-			detail.WatchProviders = filterTHProviders(detail.WatchProviders)
 			results[idx] = detail
 		}(i, id)
 	}
@@ -58,6 +57,18 @@ func (s *TVService) Discover(ctx context.Context, userID string, q DiscoverQuery
 	for _, err := range errs {
 		if err != nil {
 			return nil, 0, fmt.Errorf("tv service: enrich from tmdb: %w", err)
+		}
+	}
+
+	// Override next_episode_to_air.air_date with the DB value which has the
+	// correct timezone (set by TVMaze sync), unlike TMDB which returns date-only.
+	airDates, err := s.repo.GetNextEpisodeAirDatesByIDs(ctx, ids)
+	if err != nil {
+		return nil, 0, fmt.Errorf("tv service: get air dates from db: %w", err)
+	}
+	for i := range results {
+		if airDate, ok := airDates[results[i].ID]; ok && results[i].NextEpisodeToAir != nil {
+			results[i].NextEpisodeToAir.AirDate = FlexAirDate(airDate)
 		}
 	}
 

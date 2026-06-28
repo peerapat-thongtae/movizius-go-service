@@ -40,7 +40,7 @@ type MovieResponse struct {
 	Videos              *Videos             `bson:"videos"                 json:"videos"`
 	ReleaseDates        *ReleaseDates       `bson:"release_dates"          json:"release_dates"`
 	MediaType           string              `bson:"media_type"             json:"media_type,omitempty"`
-	WatchProviders *WatchProviders `bson:"watch_providers"        json:"watch_providers"`
+	WatchProviders *WatchProviderCountry `bson:"watch_providers"        json:"watch_providers"`
 	ReleaseDateTH  []ReleaseDate   `bson:"release_date_th"        json:"release_dates_th"`
 	UpdatedAt      time.Time       `bson:"updated_at"             json:"-"`
 }
@@ -57,7 +57,7 @@ func (r *MovieResponse) UnmarshalJSON(data []byte) error {
 	}
 	*r = MovieResponse(raw.Alias)
 	if raw.WatchProvidersIn != nil {
-		r.WatchProviders = raw.WatchProvidersIn
+		r.WatchProviders = raw.WatchProvidersIn.Results["TH"]
 	}
 	return nil
 }
@@ -177,14 +177,3 @@ type Flatrate struct {
 	DisplayPriority int    `bson:"display_priority" json:"display_priority"`
 }
 
-// filterTHProviders returns a new WatchProviders containing only the "TH" entry.
-func filterTHProviders(wp *WatchProviders) *WatchProviders {
-	if wp == nil {
-		return nil
-	}
-	th := wp.Results["TH"]
-	if th == nil {
-		return &WatchProviders{Results: map[string]*WatchProviderCountry{}}
-	}
-	return &WatchProviders{Results: map[string]*WatchProviderCountry{"TH": th}}
-}
