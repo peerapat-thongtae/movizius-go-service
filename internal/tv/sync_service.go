@@ -45,6 +45,9 @@ func (s *TVSyncService) Sync(ctx context.Context, ids []int64) error {
 			if detail.ImdbID == "" && detail.ExternalIDs != nil {
 				detail.ImdbID = detail.ExternalIDs.ImdbID
 			}
+			if !isAcceptableTV(detail) {
+				return
+			}
 			if err := s.repo.UpsertDetail(ctx, detail); err != nil {
 				errs[idx] = fmt.Errorf("upsert tv %d: %w", tvID, err)
 			}

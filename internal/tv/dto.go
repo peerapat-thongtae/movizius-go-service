@@ -23,7 +23,7 @@ type DiscoverQuery struct {
 	Softcore             *bool
 	WithWatchProviders   []int64
 	WatchRegion          string
-	WithAccountStatus    []string // "watchlist","watching","wait_next_season","watched"
+	WithAccountStatus    []string // "watchlist","watching","waiting_next_ep","watched"
 	WithoutAccountStatus []string
 	WithNetworks         []int64
 	IsAnime              *bool

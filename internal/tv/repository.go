@@ -308,7 +308,7 @@ func buildAccountStatusPipeline(userID string, q DiscoverQuery) bson.A {
 								bson.D{{Key: "$gt", Value: bson.A{"$_tv.next_episode_to_air.air_date", today}}},
 							}}},
 						}}},
-						"wait_next_season",
+						"waiting_next_ep",
 						bson.D{{Key: "$cond", Value: bson.A{
 							bson.D{{Key: "$gt", Value: bson.A{"$_count_watched", 0}}},
 							"watching",
@@ -553,7 +553,7 @@ func buildStatesPipeline(userID string) bson.A {
 					{Key: "then", Value: "watched"},
 					{Key: "else", Value: bson.D{
 						{Key: "$cond", Value: bson.D{
-							// wait_next_season: caught up to latest aired ep and no new ep available yet
+							// waiting_next_ep: caught up to latest aired ep and no new ep available yet
 							{Key: "if", Value: bson.D{{Key: "$and", Value: bson.A{
 								bson.D{{Key: "$gt", Value: bson.A{"$count_watched", 0}}},
 								bson.D{{Key: "$eq", Value: bson.A{"$max_watched_ep.season_number", "$tv.last_episode_to_air.season_number"}}},
@@ -563,7 +563,7 @@ func buildStatesPipeline(userID string) bson.A {
 									bson.D{{Key: "$gt", Value: bson.A{"$tv.next_episode_to_air.air_date", today}}},
 								}}},
 							}}}},
-							{Key: "then", Value: "wait_next_season"},
+							{Key: "then", Value: "waiting_next_ep"},
 							{Key: "else", Value: bson.D{
 								{Key: "$cond", Value: bson.D{
 									{Key: "if", Value: bson.D{{Key: "$gt", Value: bson.A{"$count_watched", 0}}}},

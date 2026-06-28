@@ -565,7 +565,7 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
-                        "description": "watchlist | watching | wait_next_season | watched",
+                        "description": "watchlist | watching | waiting_next_ep | watched",
                         "name": "with_account_status",
                         "in": "query"
                     },

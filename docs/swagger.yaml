@@ -1151,7 +1151,7 @@ paths:
         in: query
         name: watch_region
         type: string
-      - description: watchlist | watching | wait_next_season | watched
+      - description: watchlist | watching | waiting_next_ep | watched
         in: query
         name: with_account_status
         type: string

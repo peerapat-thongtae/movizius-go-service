@@ -121,7 +121,7 @@ func (h *Handler) UpsertEpisodes(w http.ResponseWriter, r *http.Request) {
 //	@Param			softcore				query		bool	false	"Filter by softcore flag"
 //	@Param			with_watch_providers	query		string	false	"Comma-separated provider IDs"
 //	@Param			watch_region			query		string	false	"ISO 3166-1 country code for watch provider filter"
-//	@Param			with_account_status		query		string	false	"watchlist | watching | wait_next_season | watched"
+//	@Param			with_account_status		query		string	false	"watchlist | watching | waiting_next_ep | watched"
 //	@Param			with_networks			query		string	false	"Comma-separated network IDs"
 //	@Param			is_anime				query		bool	false	"Filter by anime flag"
 //	@Param			with_status				query		string	false	"TV series status (e.g. Returning Series, Ended)"
