@@ -16,6 +16,8 @@ type MovieRepository interface {
 	FindByUserID(ctx context.Context, userID string) ([]MovieUser, error)
 	DiscoverIDs(ctx context.Context, userID string, q DiscoverQuery) (ids []int64, total int, err error)
 	UpsertState(ctx context.Context, userID string, req UpsertStateRequest) error
+	UpsertDetail(ctx context.Context, data MovieResponse) error
+	DeleteByTMDBID(ctx context.Context, id int64) error
 }
 
 type mongoMovieRepository struct {
@@ -64,6 +66,68 @@ func (r *mongoMovieRepository) UpsertState(ctx context.Context, userID string, r
 	_, err := r.db.Collection("movie_user").UpdateOne(ctx, filter, update, options.Update().SetUpsert(true))
 	if err != nil {
 		return fmt.Errorf("movie: upsert state: %w", err)
+	}
+	return nil
+}
+
+func (r *mongoMovieRepository) DeleteByTMDBID(ctx context.Context, id int64) error {
+	filter := bson.M{"id": id}
+	if _, err := r.db.Collection("movie").DeleteOne(ctx, filter); err != nil {
+		return fmt.Errorf("movie: delete movie %d: %w", id, err)
+	}
+	if _, err := r.db.Collection("movie_user").DeleteMany(ctx, filter); err != nil {
+		return fmt.Errorf("movie: delete movie_user %d: %w", id, err)
+	}
+	return nil
+}
+
+func (r *mongoMovieRepository) UpsertDetail(ctx context.Context, data MovieResponse) error {
+	now := time.Now().UTC()
+	filter := bson.M{"id": data.ID}
+	update := bson.M{
+		"$set": bson.M{
+			"adult":                data.Adult,
+			"backdrop_path":        data.BackdropPath,
+			"belongs_to_collection": data.BelongsToCollection,
+			"budget":               data.Budget,
+			"genres":               data.Genres,
+			"homepage":             data.Homepage,
+			"imdb_id":              data.ImdbID,
+			"origin_country":       data.OriginCountry,
+			"original_language":    data.OriginalLanguage,
+			"original_title":       data.OriginalTitle,
+			"overview":             data.Overview,
+			"popularity":           data.Popularity,
+			"poster_path":          data.PosterPath,
+			"production_companies": data.ProductionCompanies,
+			"production_countries": data.ProductionCountries,
+			"release_date":         data.ReleaseDate,
+			"release_dates":        data.ReleaseDates,
+			"release_date_th":      data.ReleaseDateTH,
+			"revenue":              data.Revenue,
+			"runtime":              data.Runtime,
+			"softcore":             data.Softcore,
+			"spoken_languages":     data.SpokenLanguages,
+			"status":               data.Status,
+			"tagline":              data.Tagline,
+			"title":                data.Title,
+			"video":                data.Video,
+			"external_ids":         data.ExternalIDs,
+			"casts":                data.Casts,
+			"videos":               data.Videos,
+			"watch_providers":      data.WatchProviders,
+			"media_type":           "movie",
+			"updated_at":           now,
+		},
+		// vote_average and vote_count are owned by IMDB sync; only set on first insert.
+		"$setOnInsert": bson.M{
+			"vote_average": data.VoteAverage,
+			"vote_count":   data.VoteCount,
+		},
+	}
+	_, err := r.db.Collection("movie").UpdateOne(ctx, filter, update, options.Update().SetUpsert(true))
+	if err != nil {
+		return fmt.Errorf("movie: upsert detail: %w", err)
 	}
 	return nil
 }

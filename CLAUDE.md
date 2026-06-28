@@ -118,3 +118,6 @@ Auth0 owns login/registration/token issuance. The API only validates JWTs.
 
 ## Documents
 - Swagger for all api routes
+
+## Sync data from 3rd party Rules
+- Not update vote_average and vote_count because we use data from imdb.

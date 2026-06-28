@@ -10,6 +10,7 @@ import (
 	"go.mongodb.org/mongo-driver/mongo"
 
 	_ "github.com/peera/movizius-go-service/docs"
+	"github.com/peera/movizius-go-service/internal/datasync"
 	"github.com/peera/movizius-go-service/internal/health"
 	"github.com/peera/movizius-go-service/internal/movie"
 	"github.com/peera/movizius-go-service/internal/notification"
@@ -54,9 +55,19 @@ func New(deps Deps) http.Handler {
 	}))
 
 	// Protected routes — each feature applies auth to its own handlers.
-	movie.NewHandler(movie.NewService(movie.NewRepository(deps.DB), deps.TMDB)).RegisterRoutes(mux, auth)
-	tv.NewHandler(tv.NewService(tv.NewRepository(deps.DB), deps.TMDB)).RegisterRoutes(mux, auth)
+	movieRepo := movie.NewRepository(deps.DB)
+	tvRepo := tv.NewRepository(deps.DB)
+
+	movie.NewHandler(movie.NewService(movieRepo, deps.TMDB)).RegisterRoutes(mux, auth)
+	tv.NewHandler(tv.NewService(tvRepo, deps.TMDB)).RegisterRoutes(mux, auth)
 	notification.NewHandler(notification.NewService(notification.NewRepository(deps.DB), deps.Firebase)).RegisterRoutes(mux, auth)
+
+	datasync.NewHandler(datasync.NewService(
+		datasync.NewRepository(deps.DB),
+		movie.NewSyncService(movieRepo, deps.TMDB),
+		tv.NewSyncService(tvRepo, deps.TMDB),
+		deps.TMDB,
+	)).RegisterRoutes(mux, auth)
 
 	// Mount the inner mux under /api/. StripPrefix removes /api before the inner
 	// mux sees the path, so features register routes without the base prefix.

@@ -11,6 +11,9 @@ import (
 
 const baseURL = "https://api.themoviedb.org/3"
 
+// ErrNotFound is returned when TMDB responds with 404 (source deleted or never existed).
+var ErrNotFound = fmt.Errorf("tmdb: not found")
+
 // Client is a TMDB API client authenticated via a Bearer access token.
 type Client struct {
 	http        *http.Client
@@ -46,6 +49,9 @@ func (c *Client) GetMovieDetail(ctx context.Context, id int64, appendKeys string
 	}
 	defer resp.Body.Close()
 
+	if resp.StatusCode == http.StatusNotFound {
+		return fmt.Errorf("tmdb: /movie/%d: %w", id, ErrNotFound)
+	}
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("tmdb: /movie/%d returned status %d", id, resp.StatusCode)
 	}
@@ -110,6 +116,45 @@ func (c *Client) GetTVEpisode(ctx context.Context, tvID int64, season, episode i
 	return nil
 }
 
+// TrendingPage is the TMDB paginated response for trending endpoints.
+type TrendingPage struct {
+	Page         int `json:"page"`
+	TotalPages   int `json:"total_pages"`
+	TotalResults int `json:"total_results"`
+	Results      []struct {
+		ID int64 `json:"id"`
+	} `json:"results"`
+}
+
+// GetTrending fetches /trending/{mediaType}/{timeWindow} from TMDB.
+// mediaType is "movie" or "tv"; timeWindow is "day" or "week".
+func (c *Client) GetTrending(ctx context.Context, mediaType, timeWindow string, page int) (*TrendingPage, error) {
+	url := fmt.Sprintf("%s/trending/%s/%s?page=%d&language=en-US", baseURL, mediaType, timeWindow, page)
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("tmdb: build request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+c.accessToken)
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("tmdb: request /trending/%s/%s: %w", mediaType, timeWindow, err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("tmdb: /trending/%s/%s returned status %d", mediaType, timeWindow, resp.StatusCode)
+	}
+
+	var result TrendingPage
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("tmdb: decode /trending/%s/%s: %w", mediaType, timeWindow, err)
+	}
+	return &result, nil
+}
+
 // GetTVDetail fetches /tv/{id} from TMDB.
 // appendKeys is the comma-separated list of append_to_response keys, e.g.
 // "credits,videos,watch/providers,external_ids".
@@ -129,6 +174,9 @@ func (c *Client) GetTVDetail(ctx context.Context, id int64, appendKeys string, t
 	}
 	defer resp.Body.Close()
 
+	if resp.StatusCode == http.StatusNotFound {
+		return fmt.Errorf("tmdb: /tv/%d: %w", id, ErrNotFound)
+	}
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("tmdb: /tv/%d returned status %d", id, resp.StatusCode)
 	}

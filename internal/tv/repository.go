@@ -17,6 +17,8 @@ type TVRepository interface {
 	DiscoverIDs(ctx context.Context, userID string, q DiscoverQuery) (ids []int64, total int, err error)
 	UpsertTVState(ctx context.Context, userID string, tvID int64, episodes []EpisodeWatched) error
 	UpsertEpisodes(ctx context.Context, userID string, req UpsertEpisodesRequest) error
+	UpsertDetail(ctx context.Context, data TVResponse) error
+	DeleteByTMDBID(ctx context.Context, id int64) error
 }
 
 type mongoTVRepository struct {
@@ -81,6 +83,74 @@ func (r *mongoTVRepository) UpsertEpisodes(ctx context.Context, userID string, r
 		if _, err := coll.UpdateOne(ctx, epFilter, epUpdate); err != nil {
 			return fmt.Errorf("tv: upsert episodes push s%de%d: %w", ep.SeasonNumber, ep.EpisodeNumber, err)
 		}
+	}
+	return nil
+}
+
+func (r *mongoTVRepository) DeleteByTMDBID(ctx context.Context, id int64) error {
+	filter := bson.M{"id": id}
+	if _, err := r.db.Collection("tv").DeleteOne(ctx, filter); err != nil {
+		return fmt.Errorf("tv: delete tv %d: %w", id, err)
+	}
+	if _, err := r.db.Collection("tv_user").DeleteMany(ctx, filter); err != nil {
+		return fmt.Errorf("tv: delete tv_user %d: %w", id, err)
+	}
+	return nil
+}
+
+func (r *mongoTVRepository) UpsertDetail(ctx context.Context, data TVResponse) error {
+	now := time.Now().UTC()
+	filter := bson.M{"id": data.ID}
+	update := bson.M{
+		"$set": bson.M{
+			"adult":                data.Adult,
+			"backdrop_path":        data.BackdropPath,
+			"created_by":           data.CreatedBy,
+			"episode_run_time":     data.EpisodeRunTime,
+			"first_air_date":       data.FirstAirDate,
+			"genres":               data.Genres,
+			"homepage":             data.Homepage,
+			"imdb_id":              data.ImdbID,
+			"in_production":        data.InProduction,
+			"is_anime":             data.IsAnime,
+			"languages":            data.Languages,
+			"last_air_date":        data.LastAirDate,
+			"last_episode_to_air":  data.LastEpisodeToAir,
+			"name":                 data.Name,
+			"networks":             data.Networks,
+			"next_episode_to_air":  data.NextEpisodeToAir,
+			"number_of_episodes":   data.NumberOfEpisodes,
+			"number_of_seasons":    data.NumberOfSeasons,
+			"origin_country":       data.OriginCountry,
+			"original_language":    data.OriginalLanguage,
+			"original_name":        data.OriginalName,
+			"overview":             data.Overview,
+			"popularity":           data.Popularity,
+			"poster_path":          data.PosterPath,
+			"production_companies": data.ProductionCompanies,
+			"production_countries": data.ProductionCountries,
+			"seasons":              data.Seasons,
+			"softcore":             data.Softcore,
+			"spoken_languages":     data.SpokenLanguages,
+			"status":               data.Status,
+			"tagline":              data.Tagline,
+			"type":                 data.Type,
+			"credits":              data.Credits,
+			"external_ids":         data.ExternalIDs,
+			"videos":               data.Videos,
+			"watch_providers":      data.WatchProviders,
+			"media_type":           "tv",
+			"updated_at":           now,
+		},
+		// vote_average and vote_count are owned by IMDB sync; only set on first insert.
+		"$setOnInsert": bson.M{
+			"vote_average": data.VoteAverage,
+			"vote_count":   data.VoteCount,
+		},
+	}
+	_, err := r.db.Collection("tv").UpdateOne(ctx, filter, update, options.Update().SetUpsert(true))
+	if err != nil {
+		return fmt.Errorf("tv: upsert detail: %w", err)
 	}
 	return nil
 }
