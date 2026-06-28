@@ -282,3 +282,15 @@ type Flatrate struct {
 	ProviderName    string `bson:"provider_name"    json:"provider_name"`
 	DisplayPriority int    `bson:"display_priority" json:"display_priority"`
 }
+
+// filterTHProviders returns a new WatchProviders containing only the "TH" entry.
+func filterTHProviders(wp *WatchProviders) *WatchProviders {
+	if wp == nil {
+		return nil
+	}
+	th := wp.Results["TH"]
+	if th == nil {
+		return &WatchProviders{Results: map[string]*WatchProviderCountry{}}
+	}
+	return &WatchProviders{Results: map[string]*WatchProviderCountry{"TH": th}}
+}

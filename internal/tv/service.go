@@ -49,6 +49,7 @@ func (s *TVService) Discover(ctx context.Context, userID string, q DiscoverQuery
 			if detail.ImdbID == "" && detail.ExternalIDs != nil {
 				detail.ImdbID = detail.ExternalIDs.ImdbID
 			}
+			detail.WatchProviders = filterTHProviders(detail.WatchProviders)
 			results[idx] = detail
 		}(i, id)
 	}
