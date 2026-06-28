@@ -28,6 +28,7 @@ func NewHandler(service *NotificationService) *Handler {
 func (h *Handler) RegisterRoutes(mux *http.ServeMux, auth func(http.Handler) http.Handler) {
 	mux.Handle("POST /notification/devices", auth(http.HandlerFunc(h.RegisterDevice)))
 	mux.Handle("POST /notification/test", auth(http.HandlerFunc(h.SendTest)))
+	mux.Handle("POST /notification/tv/today", auth(http.HandlerFunc(h.SendTodayAiring)))
 }
 
 // RegisterDevice registers or refreshes a device FCM token for push notifications.
@@ -59,6 +60,10 @@ func (h *Handler) RegisterDevice(w http.ResponseWriter, r *http.Request) {
 
 	if req.FCMToken == "" {
 		response.Error(w, http.StatusBadRequest, "fcm_token is required")
+		return
+	}
+	if req.DeviceID == "" {
+		response.Error(w, http.StatusBadRequest, "device_id is required")
 		return
 	}
 	if !validPlatforms[req.Platform] {
@@ -95,6 +100,34 @@ func (h *Handler) SendTest(w http.ResponseWriter, r *http.Request) {
 	result, err := h.service.SendTestToAll(r.Context())
 	if err != nil {
 		response.Error(w, http.StatusInternalServerError, "failed to send test notification")
+		return
+	}
+
+	response.Success(w, http.StatusOK, result)
+}
+
+// SendTodayAiring sends personalised FCM notifications to users whose watchlisted
+// shows have new episodes airing today.
+//
+//	@Summary		Send today-airing TV notifications
+//	@Description	Finds TV shows with next_episode_to_air.air_date = today, matches them to users' watchlists, and sends each user a personalised push notification. Data payload includes type="tv_airing_today" for in-app navigation.
+//	@Tags			notification
+//	@Produce		json
+//	@Security		BearerAuth
+//	@Success		200	{object}	notification.TodayAiringResult
+//	@Failure		401	{object}	map[string]string
+//	@Failure		500	{object}	map[string]string
+//	@Router			/notification/tv/today [post]
+func (h *Handler) SendTodayAiring(w http.ResponseWriter, r *http.Request) {
+	_, ok := middleware.UserIDFromContext(r.Context())
+	if !ok {
+		response.Error(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
+	result, err := h.service.SendTodayAiringTV(r.Context())
+	if err != nil {
+		response.Error(w, http.StatusInternalServerError, "failed to send today airing notifications")
 		return
 	}
 

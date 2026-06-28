@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
@@ -16,6 +17,8 @@ const collectionName = "notification_devices"
 type NotificationRepository interface {
 	UpsertDevice(ctx context.Context, device NotificationDevice) error
 	FindAll(ctx context.Context) ([]NotificationDevice, error)
+	FindUsersWithAiringToday(ctx context.Context) ([]UserAiringShows, error)
+	FindDevicesByUserIDs(ctx context.Context, userIDs []string) (map[string][]string, error)
 }
 
 type mongoNotificationRepository struct {
@@ -84,4 +87,59 @@ func (r *mongoNotificationRepository) UpsertDevice(ctx context.Context, device N
 		return fmt.Errorf("notification: upsert device: %w", err)
 	}
 	return nil
+}
+
+// FindUsersWithAiringToday aggregates shows airing today from the tv collection,
+// joins tv_user, and returns a per-user list of show names sorted by popularity desc.
+func (r *mongoNotificationRepository) FindUsersWithAiringToday(ctx context.Context) ([]UserAiringShows, error) {
+	today := time.Now().UTC().Format("2006-01-02")
+	pipeline := bson.A{
+		bson.D{{Key: "$match", Value: bson.M{
+			"next_episode_to_air.air_date": primitive.Regex{Pattern: "^" + today, Options: ""},
+		}}},
+		bson.D{{Key: "$sort", Value: bson.D{{Key: "popularity", Value: -1}}}},
+		bson.D{{Key: "$lookup", Value: bson.D{
+			{Key: "from", Value: "tv_user"},
+			{Key: "localField", Value: "id"},
+			{Key: "foreignField", Value: "id"},
+			{Key: "as", Value: "users"},
+		}}},
+		bson.D{{Key: "$unwind", Value: "$users"}},
+		bson.D{{Key: "$group", Value: bson.D{
+			{Key: "_id", Value: "$users.user_id"},
+			{Key: "shows", Value: bson.D{{Key: "$push", Value: bson.D{{Key: "name", Value: "$name"}}}}},
+		}}},
+	}
+
+	cursor, err := r.db.Collection("tv").Aggregate(ctx, pipeline)
+	if err != nil {
+		return nil, fmt.Errorf("notification: airing today aggregate: %w", err)
+	}
+	defer cursor.Close(ctx)
+
+	var results []UserAiringShows
+	if err := cursor.All(ctx, &results); err != nil {
+		return nil, fmt.Errorf("notification: decode airing today: %w", err)
+	}
+	return results, nil
+}
+
+// FindDevicesByUserIDs returns a map of user_id → FCM token list for the given user IDs.
+func (r *mongoNotificationRepository) FindDevicesByUserIDs(ctx context.Context, userIDs []string) (map[string][]string, error) {
+	cursor, err := r.db.Collection(collectionName).Find(ctx, bson.M{"user_id": bson.M{"$in": userIDs}})
+	if err != nil {
+		return nil, fmt.Errorf("notification: find devices by user ids: %w", err)
+	}
+	defer cursor.Close(ctx)
+
+	var devices []NotificationDevice
+	if err := cursor.All(ctx, &devices); err != nil {
+		return nil, fmt.Errorf("notification: decode devices by user ids: %w", err)
+	}
+
+	result := make(map[string][]string, len(userIDs))
+	for _, d := range devices {
+		result[d.UserID] = append(result[d.UserID], d.FCMToken)
+	}
+	return result, nil
 }
