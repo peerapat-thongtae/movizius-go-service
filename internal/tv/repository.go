@@ -13,7 +13,7 @@ import (
 
 // TVRepository is the data access contract for the tv_user collection.
 type TVRepository interface {
-	GetStatesByUserID(ctx context.Context, userID string) ([]TVState, error)
+	GetStatesByUserID(ctx context.Context, userID string) ([]TVStateResponse, error)
 	DiscoverIDs(ctx context.Context, userID string, q DiscoverQuery) (ids []int64, total int, err error)
 	UpsertTVState(ctx context.Context, userID string, tvID int64, episodes []EpisodeWatched) error
 	UpsertEpisodes(ctx context.Context, userID string, req UpsertEpisodesRequest) error
@@ -84,7 +84,7 @@ func (r *mongoTVRepository) UpsertEpisodes(ctx context.Context, userID string, r
 	return nil
 }
 
-func (r *mongoTVRepository) GetStatesByUserID(ctx context.Context, userID string) ([]TVState, error) {
+func (r *mongoTVRepository) GetStatesByUserID(ctx context.Context, userID string) ([]TVStateResponse, error) {
 	pipeline := buildStatesPipeline(userID)
 
 	cursor, err := r.db.Collection("tv_user").Aggregate(ctx, pipeline)
@@ -93,7 +93,7 @@ func (r *mongoTVRepository) GetStatesByUserID(ctx context.Context, userID string
 	}
 	defer cursor.Close(ctx)
 
-	results := []TVState{}
+	results := []TVStateResponse{}
 	if err := cursor.All(ctx, &results); err != nil {
 		return nil, fmt.Errorf("tv: decode states: %w", err)
 	}
@@ -508,6 +508,35 @@ func buildStatesPipeline(userID string) bson.A {
 			}},
 		}}},
 
+		// Compute watched_seasons: season numbers where the user has watched all episodes.
+		bson.D{{Key: "$addFields", Value: bson.D{
+			{Key: "watched_seasons", Value: bson.D{
+				{Key: "$map", Value: bson.D{
+					{Key: "input", Value: bson.D{
+						{Key: "$filter", Value: bson.D{
+							{Key: "input", Value: "$tv.seasons"},
+							{Key: "as", Value: "season"},
+							{Key: "cond", Value: bson.D{{Key: "$and", Value: bson.A{
+								bson.D{{Key: "$gt", Value: bson.A{"$$season.season_number", 0}}},
+								bson.D{{Key: "$eq", Value: bson.A{
+									"$$season.episode_count",
+									bson.D{{Key: "$size", Value: bson.D{
+										{Key: "$filter", Value: bson.D{
+											{Key: "input", Value: bson.D{{Key: "$ifNull", Value: bson.A{"$episode_watched", bson.A{}}}}},
+											{Key: "as", Value: "ep"},
+											{Key: "cond", Value: bson.D{{Key: "$eq", Value: bson.A{"$$ep.season_number", "$$season.season_number"}}}},
+										}},
+									}}},
+								}}},
+							}}}},
+						}},
+					}},
+					{Key: "as", Value: "s"},
+					{Key: "in", Value: "$$s.season_number"},
+				}},
+			}},
+		}}},
+
 		// Project the final response shape, pulling joined tv fields up.
 		bson.D{{Key: "$project", Value: bson.D{
 			{Key: "_id", Value: 0},
@@ -530,6 +559,7 @@ func buildStatesPipeline(userID string) bson.A {
 			{Key: "next_episode_to_air", Value: "$tv.next_episode_to_air"},
 			{Key: "last_episode_to_air", Value: "$tv.last_episode_to_air"},
 			{Key: "seasons", Value: "$tv.seasons"},
+			{Key: "watched_seasons", Value: 1},
 		}}},
 	}
 }

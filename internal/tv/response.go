@@ -1,6 +1,7 @@
 package tv
 
 import (
+	"encoding/json"
 	"time"
 )
 
@@ -43,11 +44,70 @@ type TVResponse struct {
 	Credits             *Credits            `bson:"credits"                json:"credits"`
 	ExternalIDs         *ExternalIDs        `bson:"external_ids"           json:"external_ids"`
 	Videos              *Videos             `bson:"videos"                 json:"videos"`
-	MediaType           string              `bson:"media_type"             json:"media_type"`
-	ImdbID              string              `bson:"imdb_id"                json:"imdb_id"`
+	MediaType           string              `bson:"media_type"             json:"media_type,omitempty"`
+	ImdbID              string              `bson:"imdb_id"                json:"imdb_id,omitempty"`
 	IsAnime             bool                `bson:"is_anime"               json:"is_anime"`
-	WatchProviders      *WatchProviders     `bson:"watch_providers"        json:"watch/providers"`
+	WatchProviders      *WatchProviders     `bson:"watch_providers"        json:"watch_providers"`
 	UpdatedAt           time.Time           `bson:"updated_at"             json:"-"`
+}
+
+// StateEpisode is a trimmed episode shape used in TVStateResponse (last/next episode to air).
+type StateEpisode struct {
+	ID            int64  `bson:"id"             json:"id"`
+	AirDate       string `bson:"air_date"       json:"air_date"`
+	EpisodeNumber int    `bson:"episode_number" json:"episode_number"`
+	EpisodeType   string `bson:"episode_type"   json:"episode_type"`
+	SeasonNumber  int    `bson:"season_number"  json:"season_number"`
+}
+
+// StateSeason is a trimmed season shape used in TVStateResponse.
+type StateSeason struct {
+	ID           int64   `bson:"id"            json:"id"`
+	AirDate      *string `bson:"air_date"      json:"air_date"`
+	EpisodeCount int     `bson:"episode_count" json:"episode_count"`
+	Name         string  `bson:"name"          json:"name"`
+	SeasonNumber int     `bson:"season_number" json:"season_number"`
+}
+
+// TVStateResponse is the API response shape for GET /tv/states, matching the client TVStates interface.
+type TVStateResponse struct {
+	TVID             int64            `bson:"id"                  json:"id"`
+	UserID           string           `bson:"user_id"             json:"user_id"`
+	Name             string           `bson:"name"                json:"name"`
+	MediaType        string           `bson:"media_type"          json:"media_type"`
+	IsAnime          bool             `bson:"is_anime"            json:"is_anime"`
+	VoteAverage      float64          `bson:"vote_average"        json:"vote_average"`
+	VoteCount        int64            `bson:"vote_count"          json:"vote_count"`
+	NumberOfEpisodes *int             `bson:"number_of_episodes"  json:"number_of_episodes"`
+	NumberOfSeasons  *int             `bson:"number_of_seasons"   json:"number_of_seasons"`
+	EpisodeWatched   []EpisodeWatched `bson:"episode_watched"     json:"episode_watched"`
+	LatestWatched    *time.Time       `bson:"latest_watched"      json:"latest_watched,omitempty"`
+	WatchlistedAt    time.Time        `bson:"watchlisted_at"      json:"watchlisted_at"`
+	CountWatched     int              `bson:"count_watched"       json:"count_watched"`
+	AccountStatus    string           `bson:"account_status"      json:"account_status"`
+	LatestState      *time.Time       `bson:"latest_state"        json:"latest_state,omitempty"`
+	MaxWatchedEp     *EpisodeWatched  `bson:"max_watched_ep"      json:"max_watched_ep,omitempty"`
+	NextEpisodeToAir *StateEpisode    `bson:"next_episode_to_air" json:"next_episode_to_air"`
+	LastEpisodeToAir *StateEpisode    `bson:"last_episode_to_air" json:"last_episode_to_air"`
+	Seasons          []StateSeason    `bson:"seasons"             json:"seasons"`
+	WatchedSeasons   []int            `bson:"watched_seasons"     json:"watched_seasons"`
+}
+
+// UnmarshalJSON remaps TMDB's "watch/providers" key to the struct's WatchProviders field.
+func (r *TVResponse) UnmarshalJSON(data []byte) error {
+	type Alias TVResponse
+	var raw struct {
+		Alias
+		WatchProvidersIn *WatchProviders `json:"watch/providers"`
+	}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	*r = TVResponse(raw.Alias)
+	if raw.WatchProvidersIn != nil {
+		r.WatchProviders = raw.WatchProvidersIn
+	}
+	return nil
 }
 
 type CreatedBy struct {

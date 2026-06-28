@@ -57,6 +57,10 @@ func (s *MovieService) Discover(ctx context.Context, userID string, q DiscoverQu
 				errs[idx] = fmt.Errorf("tmdb detail for id %d: %w", movieID, err)
 				return
 			}
+			detail.MediaType = "movie"
+			if detail.ImdbID == "" && detail.ExternalIDs != nil {
+				detail.ImdbID = detail.ExternalIDs.ImdbID
+			}
 			results[idx] = detail
 		}(i, id)
 	}

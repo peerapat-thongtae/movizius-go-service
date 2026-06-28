@@ -1,6 +1,7 @@
 package movie
 
 import (
+	"encoding/json"
 	"time"
 )
 
@@ -14,7 +15,7 @@ type MovieResponse struct {
 	Genres              []Genre             `bson:"genres"                 json:"genres"`
 	Homepage            string              `bson:"homepage"               json:"homepage"`
 	ID                  int64               `bson:"id"                     json:"id"`
-	ImdbID              string              `bson:"imdb_id"                json:"imdb_id"`
+	ImdbID              string              `bson:"imdb_id"                json:"imdb_id,omitempty"`
 	OriginCountry       []string            `bson:"origin_country"         json:"origin_country"`
 	OriginalLanguage    string              `bson:"original_language"      json:"original_language"`
 	OriginalTitle       string              `bson:"original_title"         json:"original_title"`
@@ -38,11 +39,27 @@ type MovieResponse struct {
 	Casts               *Casts              `bson:"casts"                  json:"casts"`
 	Videos              *Videos             `bson:"videos"                 json:"videos"`
 	ReleaseDates        *ReleaseDates       `bson:"release_dates"          json:"release_dates"`
-	MediaType           string              `bson:"media_type"             json:"media_type"`
-	// JSON key is "watch/providers" per TMDB's append_to_response convention.
-	WatchProviders *WatchProviders `bson:"watch_providers"        json:"watch/providers"`
+	MediaType           string              `bson:"media_type"             json:"media_type,omitempty"`
+	WatchProviders *WatchProviders `bson:"watch_providers"        json:"watch_providers"`
 	ReleaseDateTH  []ReleaseDate   `bson:"release_date_th"        json:"release_dates_th"`
 	UpdatedAt      time.Time       `bson:"updated_at"             json:"-"`
+}
+
+// UnmarshalJSON remaps TMDB's "watch/providers" key to the struct's WatchProviders field.
+func (r *MovieResponse) UnmarshalJSON(data []byte) error {
+	type Alias MovieResponse
+	var raw struct {
+		Alias
+		WatchProvidersIn *WatchProviders `json:"watch/providers"`
+	}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	*r = MovieResponse(raw.Alias)
+	if raw.WatchProvidersIn != nil {
+		r.WatchProviders = raw.WatchProvidersIn
+	}
+	return nil
 }
 
 type Collection struct {

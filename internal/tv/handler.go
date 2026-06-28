@@ -163,7 +163,7 @@ func (h *Handler) Discover(w http.ResponseWriter, r *http.Request) {
 //	@Tags			tv
 //	@Produce		json
 //	@Security		BearerAuth
-//	@Success		200	{object}	response.Page[tv.TVState]
+//	@Success		200	{object}	response.Page[tv.TVStateResponse]
 //	@Failure		401	{object}	map[string]string
 //	@Failure		500	{object}	map[string]string
 //	@Router			/tv/states [get]

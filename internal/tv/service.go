@@ -45,6 +45,10 @@ func (s *TVService) Discover(ctx context.Context, userID string, q DiscoverQuery
 				errs[idx] = fmt.Errorf("tmdb detail for id %d: %w", tvID, err)
 				return
 			}
+			detail.MediaType = "tv"
+			if detail.ImdbID == "" && detail.ExternalIDs != nil {
+				detail.ImdbID = detail.ExternalIDs.ImdbID
+			}
 			results[idx] = detail
 		}(i, id)
 	}
@@ -143,7 +147,7 @@ func (s *TVService) UpsertEpisodes(ctx context.Context, userID string, req Upser
 }
 
 // GetStates returns aggregated TV tracking records for the given user.
-func (s *TVService) GetStates(ctx context.Context, userID string) ([]TVState, error) {
+func (s *TVService) GetStates(ctx context.Context, userID string) ([]TVStateResponse, error) {
 	states, err := s.repo.GetStatesByUserID(ctx, userID)
 	if err != nil {
 		return nil, fmt.Errorf("tv service: get states: %w", err)
