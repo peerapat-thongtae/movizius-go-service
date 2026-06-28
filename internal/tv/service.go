@@ -139,10 +139,50 @@ func (s *TVService) UpsertTVState(ctx context.Context, userID string, req Upsert
 }
 
 // UpsertEpisodes adds specific episodes to the user's TV watch history.
+// For episodes where episode_id is absent, it is resolved from TMDB concurrently.
 func (s *TVService) UpsertEpisodes(ctx context.Context, userID string, req UpsertEpisodesRequest) error {
 	if len(req.Episodes) == 0 {
 		return fmt.Errorf("tv service: episodes must not be empty")
 	}
+
+	// Resolve missing episode IDs from TMDB in parallel.
+	type idResult struct {
+		id  int64
+		err error
+	}
+	results := make([]idResult, len(req.Episodes))
+
+	var wg sync.WaitGroup
+	for i, ep := range req.Episodes {
+		if ep.EpisodeID != nil {
+			continue
+		}
+		wg.Add(1)
+		go func(idx int, ep EpisodeInput) {
+			defer wg.Done()
+			var detail struct {
+				ID int64 `json:"id"`
+			}
+			if err := s.tmdb.GetTVEpisode(ctx, req.ID, ep.SeasonNumber, ep.EpisodeNumber, &detail); err != nil {
+				results[idx].err = err
+				return
+			}
+			results[idx].id = detail.ID
+		}(i, ep)
+	}
+	wg.Wait()
+
+	for i, r := range results {
+		if r.err != nil {
+			ep := req.Episodes[i]
+			return fmt.Errorf("tv service: fetch episode id s%de%d: %w", ep.SeasonNumber, ep.EpisodeNumber, r.err)
+		}
+		if req.Episodes[i].EpisodeID == nil && r.id != 0 {
+			id := r.id
+			req.Episodes[i].EpisodeID = &id
+		}
+	}
+
 	return s.repo.UpsertEpisodes(ctx, userID, req)
 }
 

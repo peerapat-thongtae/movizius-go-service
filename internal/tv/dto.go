@@ -43,10 +43,12 @@ type UpsertEpisodesRequest struct {
 	Episodes []EpisodeInput `json:"episodes"`
 }
 
-// EpisodeInput identifies a single episode by season and episode number.
+// EpisodeInput identifies a single episode. EpisodeID is optional — if absent
+// the service resolves it from TMDB before saving.
 type EpisodeInput struct {
-	SeasonNumber  int `json:"season_number"`
-	EpisodeNumber int `json:"episode_number"`
+	EpisodeID     *int64 `json:"episode_id,omitempty"`
+	SeasonNumber  int    `json:"season_number"`
+	EpisodeNumber int    `json:"episode_number"`
 }
 
 // discoverQueryFromRequest parses DiscoverQuery from the request's URL query params.

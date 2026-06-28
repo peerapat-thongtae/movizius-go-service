@@ -83,6 +83,33 @@ func (c *Client) GetTVSeason(ctx context.Context, tvID int64, season int, target
 	return nil
 }
 
+// GetTVEpisode fetches /tv/{id}/season/{season}/episode/{episode} from TMDB.
+func (c *Client) GetTVEpisode(ctx context.Context, tvID int64, season, episode int, target any) error {
+	url := fmt.Sprintf("%s/tv/%d/season/%d/episode/%d?language=en-US", baseURL, tvID, season, episode)
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return fmt.Errorf("tmdb: build request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+c.accessToken)
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return fmt.Errorf("tmdb: request /tv/%d/season/%d/episode/%d: %w", tvID, season, episode, err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("tmdb: /tv/%d/season/%d/episode/%d returned status %d", tvID, season, episode, resp.StatusCode)
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(target); err != nil {
+		return fmt.Errorf("tmdb: decode /tv/%d/season/%d/episode/%d: %w", tvID, season, episode, err)
+	}
+	return nil
+}
+
 // GetTVDetail fetches /tv/{id} from TMDB.
 // appendKeys is the comma-separated list of append_to_response keys, e.g.
 // "credits,videos,watch/providers,external_ids".

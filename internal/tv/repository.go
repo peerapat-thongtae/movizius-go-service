@@ -73,6 +73,7 @@ func (r *mongoTVRepository) UpsertEpisodes(ctx context.Context, userID string, r
 			}}},
 		}
 		epUpdate := bson.M{"$push": bson.M{"episode_watched": EpisodeWatched{
+			EpisodeID:     ep.EpisodeID,
 			SeasonNumber:  ep.SeasonNumber,
 			EpisodeNumber: ep.EpisodeNumber,
 			WatchedAt:     now,
