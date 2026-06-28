@@ -191,6 +191,7 @@ func buildDiscoverPipeline(userID string, q DiscoverQuery) bson.A {
 // buildAccountStatusPipeline runs on tv_user so it starts from a small,
 // user-scoped set. It joins tv only for the filtered user entries.
 func buildAccountStatusPipeline(userID string, q DiscoverQuery) bson.A {
+	today := time.Now().Format("2006-01-02")
 	const pageSize = 20
 	skip := (q.Page - 1) * pageSize
 
@@ -221,6 +222,7 @@ func buildAccountStatusPipeline(userID string, q DiscoverQuery) bson.A {
 			{Key: "_account_status", Value: bson.D{
 				{Key: "$cond", Value: bson.A{
 					bson.D{{Key: "$and", Value: bson.A{
+						bson.D{{Key: "$gt", Value: bson.A{"$_tv.number_of_episodes", 0}}},
 						bson.D{{Key: "$eq", Value: bson.A{"$_count_watched", "$_tv.number_of_episodes"}}},
 						bson.D{{Key: "$ne", Value: bson.A{"$_tv.status", "Returning Series"}}},
 					}}},
@@ -230,6 +232,10 @@ func buildAccountStatusPipeline(userID string, q DiscoverQuery) bson.A {
 							bson.D{{Key: "$gt", Value: bson.A{"$_count_watched", 0}}},
 							bson.D{{Key: "$eq", Value: bson.A{"$_max_ep.season_number", "$_tv.last_episode_to_air.season_number"}}},
 							bson.D{{Key: "$eq", Value: bson.A{"$_max_ep.episode_number", "$_tv.last_episode_to_air.episode_number"}}},
+							bson.D{{Key: "$or", Value: bson.A{
+								bson.D{{Key: "$eq", Value: bson.A{"$_tv.next_episode_to_air", nil}}},
+								bson.D{{Key: "$gt", Value: bson.A{"$_tv.next_episode_to_air.air_date", today}}},
+							}}},
 						}}},
 						"wait_next_season",
 						bson.D{{Key: "$cond", Value: bson.A{
@@ -442,7 +448,9 @@ func buildStatesPipeline(userID string) bson.A {
 		// Compute max_watched_ep (highest season/episode) and count_watched.
 		bson.D{{Key: "$addFields", Value: bson.D{
 			{Key: "max_watched_ep", Value: maxEpReduceExpr("$episode_watched")},
-			{Key: "count_watched", Value: bson.D{{Key: "$size", Value: "$episode_watched"}}},
+			{Key: "count_watched", Value: bson.D{{Key: "$size", Value: bson.D{
+				{Key: "$ifNull", Value: bson.A{"$episode_watched", bson.A{}}},
+			}}}},
 		}}},
 
 		// Derive latest_watched from the max episode's watched_at.
@@ -463,8 +471,9 @@ func buildStatesPipeline(userID string) bson.A {
 		bson.D{{Key: "$addFields", Value: bson.D{
 			{Key: "account_status", Value: bson.D{
 				{Key: "$cond", Value: bson.D{
-					// watched: finished all episodes of a completed series
+					// watched: finished all episodes of a completed series (guard number_of_episodes > 0)
 					{Key: "if", Value: bson.D{{Key: "$and", Value: bson.A{
+						bson.D{{Key: "$gt", Value: bson.A{"$tv.number_of_episodes", 0}}},
 						bson.D{{Key: "$eq", Value: bson.A{"$count_watched", "$tv.number_of_episodes"}}},
 						bson.D{{Key: "$not", Value: bson.A{
 							bson.D{{Key: "$eq", Value: bson.A{"$tv.status", "Returning Series"}}},
@@ -473,7 +482,7 @@ func buildStatesPipeline(userID string) bson.A {
 					{Key: "then", Value: "watched"},
 					{Key: "else", Value: bson.D{
 						{Key: "$cond", Value: bson.D{
-							// waiting_next_ep: caught up to latest aired ep and waiting
+							// wait_next_season: caught up to latest aired ep and no new ep available yet
 							{Key: "if", Value: bson.D{{Key: "$and", Value: bson.A{
 								bson.D{{Key: "$gt", Value: bson.A{"$count_watched", 0}}},
 								bson.D{{Key: "$eq", Value: bson.A{"$max_watched_ep.season_number", "$tv.last_episode_to_air.season_number"}}},
@@ -483,7 +492,7 @@ func buildStatesPipeline(userID string) bson.A {
 									bson.D{{Key: "$gt", Value: bson.A{"$tv.next_episode_to_air.air_date", today}}},
 								}}},
 							}}}},
-							{Key: "then", Value: "waiting_next_ep"},
+							{Key: "then", Value: "wait_next_season"},
 							{Key: "else", Value: bson.D{
 								{Key: "$cond", Value: bson.D{
 									{Key: "if", Value: bson.D{{Key: "$gt", Value: bson.A{"$count_watched", 0}}}},
