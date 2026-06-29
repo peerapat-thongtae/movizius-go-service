@@ -366,6 +366,16 @@ func (s *SyncService) SyncTVMazeSchedule(ctx context.Context) (*SyncResult, erro
 	}, nil
 }
 
+// CleanupMovieFields removes stale keys from all movie documents that are no longer in the DB model.
+func (s *SyncService) CleanupMovieFields(ctx context.Context) (int64, error) {
+	return s.repo.CleanupMovieFields(ctx)
+}
+
+// CleanupTVFields removes stale keys from all tv documents that are no longer in the DB model.
+func (s *SyncService) CleanupTVFields(ctx context.Context) (int64, error) {
+	return s.repo.CleanupTVFields(ctx)
+}
+
 // toInt64 converts BSON-decoded numeric types to int64.
 func toInt64(v any) int64 {
 	switch n := v.(type) {

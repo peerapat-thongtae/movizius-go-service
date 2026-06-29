@@ -9,6 +9,8 @@ import (
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
+
+	"github.com/peera/movizius-go-service/internal/shared/bsonutil"
 )
 
 // MovieRepository is the data access contract for the movie collections.
@@ -84,41 +86,9 @@ func (r *mongoMovieRepository) DeleteByTMDBID(ctx context.Context, id int64) err
 func (r *mongoMovieRepository) UpsertDetail(ctx context.Context, data MovieResponse) error {
 	now := time.Now().UTC()
 	filter := bson.M{"id": data.ID}
+	model := movieToModel(data, now)
 	update := bson.M{
-		"$set": bson.M{
-			"adult":                data.Adult,
-			"backdrop_path":        data.BackdropPath,
-			"belongs_to_collection": data.BelongsToCollection,
-			"budget":               data.Budget,
-			"genres":               data.Genres,
-			"homepage":             data.Homepage,
-			"imdb_id":              data.ImdbID,
-			"origin_country":       data.OriginCountry,
-			"original_language":    data.OriginalLanguage,
-			"original_title":       data.OriginalTitle,
-			"overview":             data.Overview,
-			"popularity":           data.Popularity,
-			"poster_path":          data.PosterPath,
-			"production_companies": data.ProductionCompanies,
-			"production_countries": data.ProductionCountries,
-			"release_date":         data.ReleaseDate,
-			"release_dates":        data.ReleaseDates,
-			"release_date_th":      data.ReleaseDateTH,
-			"revenue":              data.Revenue,
-			"runtime":              data.Runtime,
-			"softcore":             data.Softcore,
-			"spoken_languages":     data.SpokenLanguages,
-			"status":               data.Status,
-			"tagline":              data.Tagline,
-			"title":                data.Title,
-			"video":                data.Video,
-			"external_ids":         data.ExternalIDs,
-			"casts":                data.Casts,
-			"videos":               data.Videos,
-			"watch_providers":      extractProviderIDs(data.WatchProviders),
-			"media_type":           "movie",
-			"updated_at":           now,
-		},
+		"$set": bsonutil.StructToBsonM(model, "_id", "id", "vote_average", "vote_count"),
 		// vote_average and vote_count are owned by IMDB sync; only set on first insert.
 		"$setOnInsert": bson.M{
 			"vote_average": data.VoteAverage,

@@ -26,6 +26,8 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux, auth func(http.Handler) htt
 	mux.HandleFunc("POST /sync/movie/trending", h.SyncTrendingMovie)
 	mux.HandleFunc("POST /sync/tv/trending", h.SyncTrendingTV)
 	mux.HandleFunc("POST /sync/tv/tvmaze-schedule", h.SyncTVMazeSchedule)
+	mux.HandleFunc("POST /sync/movie/cleanup-fields", h.CleanupMovieFields)
+	mux.HandleFunc("POST /sync/tv/cleanup-fields", h.CleanupTVFields)
 }
 
 // SyncMovieUserTracked syncs TMDB metadata for movie IDs tracked in movie_user.
@@ -84,6 +86,26 @@ func (h *Handler) SyncTVMazeSchedule(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	response.Success(w, http.StatusOK, result)
+}
+
+// CleanupMovieFields removes stale keys from all movie documents that are no longer in the DB model.
+func (h *Handler) CleanupMovieFields(w http.ResponseWriter, r *http.Request) {
+	modified, err := h.service.CleanupMovieFields(r.Context())
+	if err != nil {
+		response.Error(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	response.Success(w, http.StatusOK, map[string]int64{"modified": modified})
+}
+
+// CleanupTVFields removes stale keys from all tv documents that are no longer in the DB model.
+func (h *Handler) CleanupTVFields(w http.ResponseWriter, r *http.Request) {
+	modified, err := h.service.CleanupTVFields(r.Context())
+	if err != nil {
+		response.Error(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	response.Success(w, http.StatusOK, map[string]int64{"modified": modified})
 }
 
 func parseFrequency(r *http.Request) string {
