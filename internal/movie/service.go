@@ -61,6 +61,7 @@ func (s *MovieService) Discover(ctx context.Context, userID string, q DiscoverQu
 			if detail.ImdbID == "" && detail.ExternalIDs != nil {
 				detail.ImdbID = detail.ExternalIDs.ImdbID
 			}
+			detail.ReleaseDateTH = extractReleaseDateTH(detail)
 			results[idx] = detail
 		}(i, id)
 	}

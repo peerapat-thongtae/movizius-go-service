@@ -25,6 +25,8 @@ type DiscoverQuery struct {
 	WatchRegion           string
 	WithAccountStatus    []string
 	WithoutAccountStatus []string
+	WithReleaseDateGte   string
+	WithReleaseDateLte   string
 }
 
 // UpsertStateRequest is the body for POST /movie.
@@ -54,6 +56,8 @@ func discoverQueryFromRequest(r *http.Request) DiscoverQuery {
 		WatchRegion:           strings.ToUpper(q.Get("watch_region")),
 		WithAccountStatus:    stringListParam(q.Get("with_account_status")),
 		WithoutAccountStatus: stringListParam(q.Get("without_account_status")),
+		WithReleaseDateGte:   q.Get("with_release_date.gte"),
+		WithReleaseDateLte:   q.Get("with_release_date.lte"),
 	}
 
 	if raw := q.Get("softcore"); raw != "" {

@@ -314,7 +314,49 @@ func movieMatchConditions(q DiscoverQuery) bson.D {
 	if q.Softcore != nil {
 		match = append(match, bson.E{Key: "softcore", Value: *q.Softcore})
 	}
+	if q.WithReleaseDateGte != "" || q.WithReleaseDateLte != "" {
+		// Pick release_date_th when non-empty, fall back to release_date.
+		// String comparison works for both "YYYY-MM-DD" and "YYYY-MM-DDTHH:MM:SSZ" since
+		// the date prefix sorts correctly. Normalize input to YYYY-MM-DD.
+		effectiveDate := bson.D{{Key: "$cond", Value: bson.A{
+			bson.D{{Key: "$gt", Value: bson.A{"$release_date_th", ""}}},
+			"$release_date_th",
+			"$release_date",
+		}}}
+		var arms bson.A
+		if q.WithReleaseDateGte != "" {
+			arms = append(arms, bson.D{{Key: "$gte", Value: bson.A{effectiveDate, normalizeDateGte(q.WithReleaseDateGte)}}})
+		}
+		if q.WithReleaseDateLte != "" {
+			arms = append(arms, bson.D{{Key: "$lte", Value: bson.A{effectiveDate, normalizeDateLte(q.WithReleaseDateLte)}}})
+		}
+		var expr any
+		if len(arms) == 1 {
+			expr = arms[0]
+		} else {
+			expr = bson.D{{Key: "$and", Value: arms}}
+		}
+		match = append(match, bson.E{Key: "$expr", Value: expr})
+	}
 	return match
+}
+
+// normalizeDateGte trims RFC3339 to YYYY-MM-DD for gte comparisons.
+// Both "YYYY-MM-DD" and "YYYY-MM-DDTHH:MM:SSZ" stored values sort after this prefix.
+func normalizeDateGte(s string) string {
+	if len(s) > 10 {
+		return s[:10]
+	}
+	return s
+}
+
+// normalizeDateLte appends "Z" to a date-only string so that all RFC3339 timestamps
+// on that day pass the lte check ("T" < "Z" in ASCII).
+func normalizeDateLte(s string) string {
+	if len(s) > 10 {
+		return s[:10] + "Z"
+	}
+	return s + "Z"
 }
 
 func watchProviderStages(_ string, providers []int64) bson.A {

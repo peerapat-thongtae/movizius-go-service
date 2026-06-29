@@ -131,6 +131,70 @@ func (s *NotificationService) SendTodayAiringTV(ctx context.Context) (*TodayAiri
 	return result, nil
 }
 
+// SendTodayReleasingMovies finds all users who have movies releasing today in their watchlist
+// and sends each user a personalised FCM notification listing those movies.
+func (s *NotificationService) SendTodayReleasingMovies(ctx context.Context) (*TodayAiringResult, error) {
+	userMovies, err := s.repo.FindUsersWithMovieReleasingToday(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("notification service: movie releasing today: %w", err)
+	}
+	result := &TodayAiringResult{UsersNotified: len(userMovies)}
+	if len(userMovies) == 0 {
+		return result, nil
+	}
+
+	userIDs := make([]string, len(userMovies))
+	for i, u := range userMovies {
+		userIDs[i] = u.UserID
+	}
+
+	deviceMap, err := s.repo.FindDevicesByUserIDs(ctx, userIDs)
+	if err != nil {
+		return nil, fmt.Errorf("notification service: fetch devices: %w", err)
+	}
+
+	client, err := s.firebaseApp.Messaging(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("notification service: messaging client: %w", err)
+	}
+
+	for _, u := range userMovies {
+		tokens := deviceMap[u.UserID]
+		if len(tokens) == 0 {
+			continue
+		}
+
+		total := len(u.Shows)
+		title := fmt.Sprintf("%d movies in your watchlist are releasing today.", total)
+		var body string
+		switch total {
+		case 1:
+			body = fmt.Sprintf("%s is releasing today.", u.Shows[0].Name)
+		case 2:
+			body = fmt.Sprintf("%s and %s are releasing today.", u.Shows[0].Name, u.Shows[1].Name)
+		default:
+			body = fmt.Sprintf("%s, %s, and %d more are releasing today.", u.Shows[0].Name, u.Shows[1].Name, total-2)
+		}
+
+		msg := &messaging.MulticastMessage{
+			Tokens: tokens,
+			Notification: &messaging.Notification{
+				Title: title,
+				Body:  body,
+			},
+			Data: map[string]string{"type": "movie_releasing_today"},
+		}
+		resp, err := client.SendEachForMulticast(ctx, msg)
+		if err != nil {
+			result.Failed += len(tokens)
+			continue
+		}
+		result.Succeeded += resp.SuccessCount
+		result.Failed += resp.FailureCount
+	}
+	return result, nil
+}
+
 // RegisterDevice persists a device FCM token for the given user.
 func (s *NotificationService) RegisterDevice(ctx context.Context, userID string, req RegisterDeviceRequest) error {
 	device := NotificationDevice{

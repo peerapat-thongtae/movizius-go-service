@@ -29,6 +29,7 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux, auth func(http.Handler) htt
 	mux.Handle("POST /notification/devices", auth(http.HandlerFunc(h.RegisterDevice)))
 	mux.Handle("POST /notification/test", auth(http.HandlerFunc(h.SendTest)))
 	mux.Handle("POST /notification/tv/today", http.HandlerFunc(h.SendTodayAiring))
+	mux.Handle("POST /notification/movie/today", http.HandlerFunc(h.SendTodayReleasingMovies))
 }
 
 // RegisterDevice registers or refreshes a device FCM token for push notifications.
@@ -122,6 +123,18 @@ func (h *Handler) SendTodayAiring(w http.ResponseWriter, r *http.Request) {
 	result, err := h.service.SendTodayAiringTV(r.Context())
 	if err != nil {
 		response.Error(w, http.StatusInternalServerError, "failed to send today airing notifications")
+		return
+	}
+
+	response.Success(w, http.StatusOK, result)
+}
+
+// SendTodayReleasingMovies sends personalised FCM notifications to users whose watchlisted
+// movies are releasing today.
+func (h *Handler) SendTodayReleasingMovies(w http.ResponseWriter, r *http.Request) {
+	result, err := h.service.SendTodayReleasingMovies(r.Context())
+	if err != nil {
+		response.Error(w, http.StatusInternalServerError, "failed to send today releasing movie notifications")
 		return
 	}
 

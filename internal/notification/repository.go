@@ -18,6 +18,7 @@ type NotificationRepository interface {
 	UpsertDevice(ctx context.Context, device NotificationDevice) error
 	FindAll(ctx context.Context) ([]NotificationDevice, error)
 	FindUsersWithAiringToday(ctx context.Context) ([]UserAiringShows, error)
+	FindUsersWithMovieReleasingToday(ctx context.Context) ([]UserAiringShows, error)
 	FindDevicesByUserIDs(ctx context.Context, userIDs []string) (map[string][]string, error)
 }
 
@@ -91,8 +92,13 @@ func (r *mongoNotificationRepository) UpsertDevice(ctx context.Context, device N
 
 // FindUsersWithAiringToday aggregates shows airing today from the tv collection,
 // joins tv_user, and returns a per-user list of show names sorted by popularity desc.
+func bangkokToday() string {
+	loc, _ := time.LoadLocation("Asia/Bangkok")
+	return time.Now().In(loc).Format("2006-01-02")
+}
+
 func (r *mongoNotificationRepository) FindUsersWithAiringToday(ctx context.Context) ([]UserAiringShows, error) {
-	today := time.Now().UTC().Format("2006-01-02")
+	today := bangkokToday()
 	pipeline := bson.A{
 		bson.D{{Key: "$match", Value: bson.M{
 			"next_episode_to_air.air_date": primitive.Regex{Pattern: "^" + today, Options: ""},
@@ -120,6 +126,48 @@ func (r *mongoNotificationRepository) FindUsersWithAiringToday(ctx context.Conte
 	var results []UserAiringShows
 	if err := cursor.All(ctx, &results); err != nil {
 		return nil, fmt.Errorf("notification: decode airing today: %w", err)
+	}
+	return results, nil
+}
+
+// FindUsersWithMovieReleasingToday aggregates movies releasing today from the movie collection,
+// joins movie_user, and returns a per-user list of movie titles sorted by popularity desc.
+// release_date_th takes priority; falls back to release_date.
+func (r *mongoNotificationRepository) FindUsersWithMovieReleasingToday(ctx context.Context) ([]UserAiringShows, error) {
+	today := bangkokToday()
+	pipeline := bson.A{
+		bson.D{{Key: "$match", Value: bson.M{
+			"$or": bson.A{
+				bson.M{"release_date_th": primitive.Regex{Pattern: "^" + today, Options: ""}},
+				bson.M{
+					"release_date_th": bson.M{"$in": bson.A{nil, ""}},
+					"release_date":    primitive.Regex{Pattern: "^" + today, Options: ""},
+				},
+			},
+		}}},
+		bson.D{{Key: "$sort", Value: bson.D{{Key: "popularity", Value: -1}}}},
+		bson.D{{Key: "$lookup", Value: bson.D{
+			{Key: "from", Value: "movie_user"},
+			{Key: "localField", Value: "id"},
+			{Key: "foreignField", Value: "id"},
+			{Key: "as", Value: "users"},
+		}}},
+		bson.D{{Key: "$unwind", Value: "$users"}},
+		bson.D{{Key: "$group", Value: bson.D{
+			{Key: "_id", Value: "$users.user_id"},
+			{Key: "shows", Value: bson.D{{Key: "$push", Value: bson.D{{Key: "name", Value: "$title"}}}}},
+		}}},
+	}
+
+	cursor, err := r.db.Collection("movie").Aggregate(ctx, pipeline)
+	if err != nil {
+		return nil, fmt.Errorf("notification: movie releasing today aggregate: %w", err)
+	}
+	defer cursor.Close(ctx)
+
+	var results []UserAiringShows
+	if err := cursor.All(ctx, &results); err != nil {
+		return nil, fmt.Errorf("notification: decode movie releasing today: %w", err)
 	}
 	return results, nil
 }

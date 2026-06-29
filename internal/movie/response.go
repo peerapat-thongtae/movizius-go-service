@@ -41,7 +41,7 @@ type MovieResponse struct {
 	ReleaseDates        *ReleaseDates         `bson:"release_dates"          json:"release_dates"`
 	MediaType           string                `bson:"media_type"             json:"media_type,omitempty"`
 	WatchProviders      *WatchProviderCountry `bson:"watch_providers"        json:"watch_providers"`
-	ReleaseDateTH       string                `bson:"release_date_th"        json:"release_dates_th"`
+	ReleaseDateTH       string                `bson:"release_date_th"        json:"release_date_th"`
 	UpdatedAt           time.Time             `bson:"updated_at"             json:"-"`
 }
 
@@ -60,6 +60,25 @@ func (r *MovieResponse) UnmarshalJSON(data []byte) error {
 		r.WatchProviders = raw.WatchProvidersIn.Results["TH"]
 	}
 	return nil
+}
+
+// extractReleaseDateTH finds the theatrical (type=3) release date for Thailand.
+func extractReleaseDateTH(data MovieResponse) string {
+	if data.ReleaseDates == nil {
+		return ""
+	}
+	for _, r := range data.ReleaseDates.Results {
+		if r.ISO31661 != "TH" {
+			continue
+		}
+		for _, d := range r.ReleaseDates {
+			if d.Type == 3 && d.ReleaseDate != "" {
+				return d.ReleaseDate
+			}
+		}
+		break
+	}
+	return ""
 }
 
 type Collection struct {
@@ -149,12 +168,12 @@ type ReleaseDatesResult struct {
 }
 
 type ReleaseDate struct {
-	Certification string     `bson:"certification" json:"certification"`
-	Descriptors   []string   `bson:"descriptors"   json:"descriptors"`
-	ISO6391       string     `bson:"iso_639_1"     json:"iso_639_1"`
-	Note          string     `bson:"note"          json:"note"`
-	ReleaseDate   *time.Time `bson:"release_date"  json:"release_date"`
-	Type          int        `bson:"type"          json:"type"`
+	Certification string   `bson:"certification" json:"certification"`
+	Descriptors   []string `bson:"descriptors"   json:"descriptors"`
+	ISO6391       string   `bson:"iso_639_1"     json:"iso_639_1"`
+	Note          string   `bson:"note"          json:"note"`
+	ReleaseDate   string   `bson:"release_date"  json:"release_date"`
+	Type          int      `bson:"type"          json:"type"`
 }
 
 type WatchProviders struct {
