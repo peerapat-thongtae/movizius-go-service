@@ -21,11 +21,11 @@ func NewHandler(service *SyncService) *Handler {
 
 // RegisterRoutes registers sync endpoints on the provided mux.
 func (h *Handler) RegisterRoutes(mux *http.ServeMux, auth func(http.Handler) http.Handler) {
-	mux.Handle("POST /sync/movie/tracked", auth(http.HandlerFunc(h.SyncMovieUserTracked)))
-	mux.Handle("POST /sync/tv/tracked", auth(http.HandlerFunc(h.SyncTVUserTracked)))
-	mux.Handle("POST /sync/movie/trending", auth(http.HandlerFunc(h.SyncTrendingMovie)))
-	mux.Handle("POST /sync/tv/trending", auth(http.HandlerFunc(h.SyncTrendingTV)))
-	mux.Handle("POST /sync/tv/tvmaze-schedule", auth(http.HandlerFunc(h.SyncTVMazeSchedule)))
+	mux.HandleFunc("POST /sync/movie/tracked", h.SyncMovieUserTracked)
+	mux.HandleFunc("POST /sync/tv/tracked", h.SyncTVUserTracked)
+	mux.HandleFunc("POST /sync/movie/trending", h.SyncTrendingMovie)
+	mux.HandleFunc("POST /sync/tv/trending", h.SyncTrendingTV)
+	mux.HandleFunc("POST /sync/tv/tvmaze-schedule", h.SyncTVMazeSchedule)
 }
 
 // SyncMovieUserTracked syncs TMDB metadata for movie IDs tracked in movie_user.

@@ -28,7 +28,7 @@ func NewHandler(service *NotificationService) *Handler {
 func (h *Handler) RegisterRoutes(mux *http.ServeMux, auth func(http.Handler) http.Handler) {
 	mux.Handle("POST /notification/devices", auth(http.HandlerFunc(h.RegisterDevice)))
 	mux.Handle("POST /notification/test", auth(http.HandlerFunc(h.SendTest)))
-	mux.Handle("POST /notification/tv/today", auth(http.HandlerFunc(h.SendTodayAiring)))
+	mux.Handle("POST /notification/tv/today", http.HandlerFunc(h.SendTodayAiring))
 }
 
 // RegisterDevice registers or refreshes a device FCM token for push notifications.
@@ -119,12 +119,6 @@ func (h *Handler) SendTest(w http.ResponseWriter, r *http.Request) {
 //	@Failure		500	{object}	map[string]string
 //	@Router			/notification/tv/today [post]
 func (h *Handler) SendTodayAiring(w http.ResponseWriter, r *http.Request) {
-	_, ok := middleware.UserIDFromContext(r.Context())
-	if !ok {
-		response.Error(w, http.StatusUnauthorized, "unauthorized")
-		return
-	}
-
 	result, err := h.service.SendTodayAiringTV(r.Context())
 	if err != nil {
 		response.Error(w, http.StatusInternalServerError, "failed to send today airing notifications")
