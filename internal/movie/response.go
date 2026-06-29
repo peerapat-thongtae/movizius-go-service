@@ -8,41 +8,41 @@ import (
 // Movie represents a movie document in the movies collection (TMDB metadata cache).
 // JSON keys mirror the TMDB API / Dart model (snake_case); BSON keys mirror MongoDB storage.
 type MovieResponse struct {
-	Adult               bool                `bson:"adult"                  json:"adult"`
-	BackdropPath        string              `bson:"backdrop_path"          json:"backdrop_path"`
-	BelongsToCollection *Collection         `bson:"belongs_to_collection"  json:"belongs_to_collection"`
-	Budget              int64               `bson:"budget"                 json:"budget"`
-	Genres              []Genre             `bson:"genres"                 json:"genres"`
-	Homepage            string              `bson:"homepage"               json:"homepage"`
-	ID                  int64               `bson:"id"                     json:"id"`
-	ImdbID              string              `bson:"imdb_id"                json:"imdb_id,omitempty"`
-	OriginCountry       []string            `bson:"origin_country"         json:"origin_country"`
-	OriginalLanguage    string              `bson:"original_language"      json:"original_language"`
-	OriginalTitle       string              `bson:"original_title"         json:"original_title"`
-	Overview            string              `bson:"overview"               json:"overview"`
-	Popularity          float64             `bson:"popularity"             json:"popularity"`
-	PosterPath          string              `bson:"poster_path"            json:"poster_path"`
-	ProductionCompanies []ProductionCompany `bson:"production_companies"   json:"production_companies"`
-	ProductionCountries []ProductionCountry `bson:"production_countries"   json:"production_countries"`
-	ReleaseDate         string              `bson:"release_date"           json:"release_date"`
-	Revenue             int64               `bson:"revenue"                json:"revenue"`
-	Runtime             int                 `bson:"runtime"                json:"runtime"`
-	Softcore            bool                `bson:"softcore"               json:"softcore"`
-	SpokenLanguages     []SpokenLanguage    `bson:"spoken_languages"       json:"spoken_languages"`
-	Status              string              `bson:"status"                 json:"status"`
-	Tagline             string              `bson:"tagline"                json:"tagline"`
-	Title               string              `bson:"title"                  json:"title"`
-	Video               bool                `bson:"video"                  json:"video"`
-	VoteAverage         float64             `bson:"vote_average"           json:"vote_average"`
-	VoteCount           int64               `bson:"vote_count"             json:"vote_count"`
-	ExternalIDs         *ExternalIDs        `bson:"external_ids"           json:"external_ids"`
-	Casts               *Casts              `bson:"casts"                  json:"casts"`
-	Videos              *Videos             `bson:"videos"                 json:"videos"`
-	ReleaseDates        *ReleaseDates       `bson:"release_dates"          json:"release_dates"`
-	MediaType           string              `bson:"media_type"             json:"media_type,omitempty"`
-	WatchProviders *WatchProviderCountry `bson:"watch_providers"        json:"watch_providers"`
-	ReleaseDateTH  []ReleaseDate   `bson:"release_date_th"        json:"release_dates_th"`
-	UpdatedAt      time.Time       `bson:"updated_at"             json:"-"`
+	Adult               bool                  `bson:"adult"                  json:"adult"`
+	BackdropPath        string                `bson:"backdrop_path"          json:"backdrop_path"`
+	BelongsToCollection *Collection           `bson:"belongs_to_collection"  json:"belongs_to_collection"`
+	Budget              int64                 `bson:"budget"                 json:"budget"`
+	Genres              []Genre               `bson:"genres"                 json:"genres"`
+	Homepage            string                `bson:"homepage"               json:"homepage"`
+	ID                  int64                 `bson:"id"                     json:"id"`
+	ImdbID              string                `bson:"imdb_id"                json:"imdb_id,omitempty"`
+	OriginCountry       []string              `bson:"origin_country"         json:"origin_country"`
+	OriginalLanguage    string                `bson:"original_language"      json:"original_language"`
+	OriginalTitle       string                `bson:"original_title"         json:"original_title"`
+	Overview            string                `bson:"overview"               json:"overview"`
+	Popularity          float64               `bson:"popularity"             json:"popularity"`
+	PosterPath          string                `bson:"poster_path"            json:"poster_path"`
+	ProductionCompanies []ProductionCompany   `bson:"production_companies"   json:"production_companies"`
+	ProductionCountries []ProductionCountry   `bson:"production_countries"   json:"production_countries"`
+	ReleaseDate         string                `bson:"release_date"           json:"release_date"`
+	Revenue             int64                 `bson:"revenue"                json:"revenue"`
+	Runtime             int                   `bson:"runtime"                json:"runtime"`
+	Softcore            bool                  `bson:"softcore"               json:"softcore"`
+	SpokenLanguages     []SpokenLanguage      `bson:"spoken_languages"       json:"spoken_languages"`
+	Status              string                `bson:"status"                 json:"status"`
+	Tagline             string                `bson:"tagline"                json:"tagline"`
+	Title               string                `bson:"title"                  json:"title"`
+	Video               bool                  `bson:"video"                  json:"video"`
+	VoteAverage         float64               `bson:"vote_average"           json:"vote_average"`
+	VoteCount           int64                 `bson:"vote_count"             json:"vote_count"`
+	ExternalIDs         *ExternalIDs          `bson:"external_ids"           json:"external_ids"`
+	Casts               *Casts                `bson:"casts"                  json:"casts"`
+	Videos              *Videos               `bson:"videos"                 json:"videos"`
+	ReleaseDates        *ReleaseDates         `bson:"release_dates"          json:"release_dates"`
+	MediaType           string                `bson:"media_type"             json:"media_type,omitempty"`
+	WatchProviders      *WatchProviderCountry `bson:"watch_providers"        json:"watch_providers"`
+	ReleaseDateTH       string                `bson:"release_date_th"        json:"release_dates_th"`
+	UpdatedAt           time.Time             `bson:"updated_at"             json:"-"`
 }
 
 // UnmarshalJSON remaps TMDB's "watch/providers" key to the struct's WatchProviders field.
@@ -176,4 +176,3 @@ type Flatrate struct {
 	ProviderName    string `bson:"provider_name"    json:"provider_name"`
 	DisplayPriority int    `bson:"display_priority" json:"display_priority"`
 }
-

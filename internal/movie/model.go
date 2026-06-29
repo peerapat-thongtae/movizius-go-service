@@ -19,7 +19,7 @@ type Movie struct {
 	Popularity          *float64           `bson:"popularity"                   json:"popularity"`
 	Genres              []int64            `bson:"genres"                       json:"genres"`
 	ProductionCompanies []int64            `bson:"production_companies"         json:"production_companies"`
-	ReleaseDateTH       []any              `bson:"release_date_th"              json:"release_date_th"`
+	ReleaseDateTH       string             `bson:"release_date_th"              json:"release_date_th"`
 	CollectionID        *int64             `bson:"collection_id"                json:"collection_id"`
 	MediaType           string             `bson:"media_type"                   json:"media_type"`
 	ReleaseDate         string             `bson:"release_date"                 json:"release_date"`

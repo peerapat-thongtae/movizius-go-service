@@ -22,11 +22,6 @@ func movieToModel(data MovieResponse, now time.Time) Movie {
 		collectionID = &id
 	}
 
-	releaseDateTH := make([]any, len(data.ReleaseDateTH))
-	for i, d := range data.ReleaseDateTH {
-		releaseDateTH[i] = d
-	}
-
 	runtime := data.Runtime
 	return Movie{
 		MovieID:             data.ID,
@@ -39,7 +34,7 @@ func movieToModel(data MovieResponse, now time.Time) Movie {
 		Popularity:          &data.Popularity,
 		Genres:              genres,
 		ProductionCompanies: companies,
-		ReleaseDateTH:       releaseDateTH,
+		ReleaseDateTH:       data.ReleaseDateTH,
 		CollectionID:        collectionID,
 		MediaType:           "movie",
 		ReleaseDate:         data.ReleaseDate,
