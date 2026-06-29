@@ -16,6 +16,7 @@ import (
 // MovieRepository is the data access contract for the movie collections.
 type MovieRepository interface {
 	FindByUserID(ctx context.Context, userID string) ([]MovieUser, error)
+	FindByTMDBIDs(ctx context.Context, ids []int64) (map[int64]Movie, error)
 	DiscoverIDs(ctx context.Context, userID string, q DiscoverQuery) (ids []int64, total int, err error)
 	UpsertState(ctx context.Context, userID string, req UpsertStateRequest) error
 	UpsertDetail(ctx context.Context, data MovieResponse) error
@@ -45,6 +46,24 @@ func (r *mongoMovieRepository) FindByUserID(ctx context.Context, userID string) 
 		return nil, fmt.Errorf("movie: decode results: %w", err)
 	}
 	return results, nil
+}
+
+func (r *mongoMovieRepository) FindByTMDBIDs(ctx context.Context, ids []int64) (map[int64]Movie, error) {
+	cursor, err := r.db.Collection("movie").Find(ctx, bson.M{"id": bson.M{"$in": ids}})
+	if err != nil {
+		return nil, fmt.Errorf("movie: find by tmdb ids: %w", err)
+	}
+	defer cursor.Close(ctx)
+
+	result := make(map[int64]Movie, len(ids))
+	for cursor.Next(ctx) {
+		var m Movie
+		if err := cursor.Decode(&m); err != nil {
+			return nil, fmt.Errorf("movie: decode movie: %w", err)
+		}
+		result[m.MovieID] = m
+	}
+	return result, cursor.Err()
 }
 
 func (r *mongoMovieRepository) UpsertState(ctx context.Context, userID string, req UpsertStateRequest) error {

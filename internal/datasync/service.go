@@ -29,6 +29,28 @@ func NewService(repo SyncRepository, movieSync *movie.MovieSyncService, tvSync *
 	return &SyncService{repo: repo, movieSync: movieSync, tvSync: tvSync, tmdb: tmdbClient, tvmaze: tvmazeClient}
 }
 
+// SyncByIDs syncs TMDB metadata for the given list of IDs directly.
+func (s *SyncService) SyncByIDs(ctx context.Context, mediaType string, ids []int64) (*SyncResult, error) {
+	var err error
+	switch mediaType {
+	case "movie":
+		err = s.movieSync.Sync(ctx, ids)
+	case "tv":
+		err = s.tvSync.Sync(ctx, ids)
+	default:
+		return nil, fmt.Errorf("unsupported media type: %s", mediaType)
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &SyncResult{
+		Source:    "by_ids",
+		Total:     len(ids),
+		Processed: len(ids),
+		Status:    StatusCompleted,
+	}, nil
+}
+
 // SyncFromUserTracked syncs TMDB metadata for IDs in movie_user or tv_user using offset paging.
 // Loads the existing job by syncKey; creates a new one if not found yet.
 func (s *SyncService) SyncFromUserTracked(ctx context.Context, syncKey, mediaType, frequency string, limit int) (*SyncResult, error) {

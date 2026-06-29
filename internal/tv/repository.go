@@ -16,6 +16,7 @@ import (
 // TVRepository is the data access contract for the tv_user collection.
 type TVRepository interface {
 	GetStatesByUserID(ctx context.Context, userID string) ([]TVStateResponse, error)
+	FindByTMDBIDs(ctx context.Context, ids []int64) (map[int64]TV, error)
 	DiscoverIDs(ctx context.Context, userID string, q DiscoverQuery) (ids []int64, total int, err error)
 	UpsertTVState(ctx context.Context, userID string, tvID int64, episodes []EpisodeWatched) error
 	UpsertEpisodes(ctx context.Context, userID string, req UpsertEpisodesRequest) error
@@ -32,6 +33,24 @@ type mongoTVRepository struct {
 // NewRepository constructs a TVRepository backed by MongoDB.
 func NewRepository(db *mongo.Database) TVRepository {
 	return &mongoTVRepository{db: db}
+}
+
+func (r *mongoTVRepository) FindByTMDBIDs(ctx context.Context, ids []int64) (map[int64]TV, error) {
+	cursor, err := r.db.Collection("tv").Find(ctx, bson.M{"id": bson.M{"$in": ids}})
+	if err != nil {
+		return nil, fmt.Errorf("tv: find by tmdb ids: %w", err)
+	}
+	defer cursor.Close(ctx)
+
+	result := make(map[int64]TV, len(ids))
+	for cursor.Next(ctx) {
+		var t TV
+		if err := cursor.Decode(&t); err != nil {
+			return nil, fmt.Errorf("tv: decode tv: %w", err)
+		}
+		result[t.TVID] = t
+	}
+	return result, cursor.Err()
 }
 
 func (r *mongoTVRepository) UpsertTVState(ctx context.Context, userID string, tvID int64, episodes []EpisodeWatched) error {

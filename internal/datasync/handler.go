@@ -1,11 +1,16 @@
 package datasync
 
 import (
+	"encoding/json"
 	"net/http"
 	"strconv"
 
 	"github.com/peera/movizius-go-service/internal/shared/response"
 )
+
+type syncByIDsRequest struct {
+	IDs []int64 `json:"ids"`
+}
 
 const defaultLimit = 20
 
@@ -21,6 +26,8 @@ func NewHandler(service *SyncService) *Handler {
 
 // RegisterRoutes registers sync endpoints on the provided mux.
 func (h *Handler) RegisterRoutes(mux *http.ServeMux, auth func(http.Handler) http.Handler) {
+	mux.HandleFunc("POST /sync/movie/by-ids", h.SyncMovieByIDs)
+	mux.HandleFunc("POST /sync/tv/by-ids", h.SyncTVByIDs)
 	mux.HandleFunc("POST /sync/movie/tracked", h.SyncMovieUserTracked)
 	mux.HandleFunc("POST /sync/tv/tracked", h.SyncTVUserTracked)
 	mux.HandleFunc("POST /sync/movie/trending", h.SyncTrendingMovie)
@@ -28,6 +35,36 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux, auth func(http.Handler) htt
 	mux.HandleFunc("POST /sync/tv/tvmaze-schedule", h.SyncTVMazeSchedule)
 	mux.HandleFunc("POST /sync/movie/cleanup-fields", h.CleanupMovieFields)
 	mux.HandleFunc("POST /sync/tv/cleanup-fields", h.CleanupTVFields)
+}
+
+// SyncMovieByIDs syncs TMDB metadata for the movie IDs provided in the request body.
+func (h *Handler) SyncMovieByIDs(w http.ResponseWriter, r *http.Request) {
+	var req syncByIDsRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || len(req.IDs) == 0 {
+		response.Error(w, http.StatusBadRequest, "ids is required")
+		return
+	}
+	result, err := h.service.SyncByIDs(r.Context(), "movie", req.IDs)
+	if err != nil {
+		response.Error(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	response.Success(w, http.StatusOK, result)
+}
+
+// SyncTVByIDs syncs TMDB metadata for the TV IDs provided in the request body.
+func (h *Handler) SyncTVByIDs(w http.ResponseWriter, r *http.Request) {
+	var req syncByIDsRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || len(req.IDs) == 0 {
+		response.Error(w, http.StatusBadRequest, "ids is required")
+		return
+	}
+	result, err := h.service.SyncByIDs(r.Context(), "tv", req.IDs)
+	if err != nil {
+		response.Error(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	response.Success(w, http.StatusOK, result)
 }
 
 // SyncMovieUserTracked syncs TMDB metadata for movie IDs tracked in movie_user.

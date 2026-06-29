@@ -24,6 +24,48 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux, auth func(http.Handler) htt
 	mux.Handle("POST /movie", auth(http.HandlerFunc(h.UpsertState)))
 	mux.Handle("GET /movie/states", auth(http.HandlerFunc(h.GetStates)))
 	mux.Handle("GET /movie/discover", auth(http.HandlerFunc(h.Discover)))
+	mux.Handle("GET /movie/search", auth(http.HandlerFunc(h.Search)))
+}
+
+// Search searches TMDB for movies matching a query and enriches results with cached DB data.
+//
+//	@Summary		Search movies
+//	@Description	Search TMDB for movies. Results are enriched with genres and metadata from the local cache when available.
+//	@Tags			movies
+//	@Produce		json
+//	@Security		BearerAuth
+//	@Param			q		query		string	true	"Search query"
+//	@Param			page	query		int		false	"Page number (default 1)"
+//	@Success		200		{object}	response.Page[movie.MovieResponse]
+//	@Failure		400		{object}	map[string]string
+//	@Failure		401		{object}	map[string]string
+//	@Failure		500		{object}	map[string]string
+//	@Router			/movie/search [get]
+func (h *Handler) Search(w http.ResponseWriter, r *http.Request) {
+	_, ok := middleware.UserIDFromContext(r.Context())
+	if !ok {
+		response.Error(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
+	q := r.URL.Query().Get("q")
+	if q == "" {
+		response.Error(w, http.StatusBadRequest, "q is required")
+		return
+	}
+
+	page := intParam(r.URL.Query().Get("page"), 1)
+	if page < 1 {
+		page = 1
+	}
+
+	result, err := h.service.Search(r.Context(), q, page)
+	if err != nil {
+		response.Error(w, http.StatusInternalServerError, "failed to search movies")
+		return
+	}
+
+	response.Success(w, http.StatusOK, result)
 }
 
 // UpsertState creates or updates the authenticated user's movie tracking record.

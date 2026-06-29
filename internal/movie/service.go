@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/peera/movizius-go-service/internal/shared/response"
 	"github.com/peera/movizius-go-service/pkg/tmdb"
 )
 
@@ -74,6 +75,85 @@ func (s *MovieService) Discover(ctx context.Context, userID string, q DiscoverQu
 	}
 
 	return results, total, nil
+}
+
+// searchResult is a minimal TMDB search result used only to collect IDs.
+type searchResult struct {
+	ID int64 `json:"id"`
+}
+
+// Search queries TMDB for movies, fetches full detail for each result, then merges
+// with cached DB records (DB fields take precedence for vote_average/vote_count).
+func (s *MovieService) Search(ctx context.Context, query string, page int) (*response.Page[MovieResponse], error) {
+	var tmdbResult tmdb.SearchPage[searchResult]
+	if err := s.tmdb.SearchMovie(ctx, query, page, &tmdbResult); err != nil {
+		return nil, fmt.Errorf("movie service: search tmdb: %w", err)
+	}
+
+	if len(tmdbResult.Results) == 0 {
+		return &response.Page[MovieResponse]{
+			Page:         tmdbResult.Page,
+			TotalPages:   tmdbResult.TotalPages,
+			TotalResults: tmdbResult.TotalResults,
+			Results:      []MovieResponse{},
+		}, nil
+	}
+
+	ids := make([]int64, len(tmdbResult.Results))
+	for i, r := range tmdbResult.Results {
+		ids[i] = r.ID
+	}
+
+	details := make([]MovieResponse, len(ids))
+	errs := make([]error, len(ids))
+	var wg sync.WaitGroup
+	for i, id := range ids {
+		wg.Add(1)
+		go func(idx int, movieID int64) {
+			defer wg.Done()
+			var detail MovieResponse
+			if err := s.tmdb.GetMovieDetail(ctx, movieID, appendToResponse, &detail); err != nil {
+				errs[idx] = fmt.Errorf("tmdb detail for id %d: %w", movieID, err)
+				return
+			}
+			detail.MediaType = "movie"
+			if detail.ImdbID == "" && detail.ExternalIDs != nil {
+				detail.ImdbID = detail.ExternalIDs.ImdbID
+			}
+			detail.ReleaseDateTH = extractReleaseDateTH(detail)
+			details[idx] = detail
+		}(i, id)
+	}
+	wg.Wait()
+
+	for _, err := range errs {
+		if err != nil {
+			return nil, fmt.Errorf("movie service: search enrich from tmdb: %w", err)
+		}
+	}
+
+	cached, err := s.repo.FindByTMDBIDs(ctx, ids)
+	if err != nil {
+		return nil, fmt.Errorf("movie service: fetch cached movies: %w", err)
+	}
+
+	for i, detail := range details {
+		if db, ok := cached[detail.ID]; ok {
+			if db.VoteAverage != nil {
+				details[i].VoteAverage = *db.VoteAverage
+			}
+			if db.VoteCount != nil {
+				details[i].VoteCount = *db.VoteCount
+			}
+		}
+	}
+
+	return &response.Page[MovieResponse]{
+		Page:         tmdbResult.Page,
+		TotalPages:   tmdbResult.TotalPages,
+		TotalResults: tmdbResult.TotalResults,
+		Results:      details,
+	}, nil
 }
 
 // UpsertState creates or updates the user's movie tracking record.

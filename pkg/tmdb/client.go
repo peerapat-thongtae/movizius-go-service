@@ -155,6 +155,66 @@ func (c *Client) GetTrending(ctx context.Context, mediaType, timeWindow string, 
 	return &result, nil
 }
 
+// SearchPage is the TMDB paginated response for search endpoints.
+type SearchPage[T any] struct {
+	Page         int `json:"page"`
+	TotalPages   int `json:"total_pages"`
+	TotalResults int `json:"total_results"`
+	Results      []T `json:"results"`
+}
+
+// SearchMovie calls /3/search/movie and decodes the result into target.
+func (c *Client) SearchMovie(ctx context.Context, query string, page int, target any) error {
+	url := fmt.Sprintf("%s/search/movie?query=%s&page=%d&language=en-US", baseURL, query, page)
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return fmt.Errorf("tmdb: build request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+c.accessToken)
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return fmt.Errorf("tmdb: request /search/movie: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("tmdb: /search/movie returned status %d", resp.StatusCode)
+	}
+	if err := json.NewDecoder(resp.Body).Decode(target); err != nil {
+		return fmt.Errorf("tmdb: decode /search/movie: %w", err)
+	}
+	return nil
+}
+
+// SearchTV calls /3/search/tv and decodes the result into target.
+func (c *Client) SearchTV(ctx context.Context, query string, page int, target any) error {
+	url := fmt.Sprintf("%s/search/tv?query=%s&page=%d&language=en-US", baseURL, query, page)
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return fmt.Errorf("tmdb: build request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+c.accessToken)
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return fmt.Errorf("tmdb: request /search/tv: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("tmdb: /search/tv returned status %d", resp.StatusCode)
+	}
+	if err := json.NewDecoder(resp.Body).Decode(target); err != nil {
+		return fmt.Errorf("tmdb: decode /search/tv: %w", err)
+	}
+	return nil
+}
+
 // GetTVDetail fetches /tv/{id} from TMDB.
 // appendKeys is the comma-separated list of append_to_response keys, e.g.
 // "credits,videos,watch/providers,external_ids".
