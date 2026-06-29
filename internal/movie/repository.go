@@ -283,17 +283,28 @@ func movieMatchConditions(q DiscoverQuery) bson.D {
 			{Key: "$gte", Value: y + "-01-01"},
 			{Key: "$lte", Value: y + "-12-31"},
 		}})
-	} else {
-		dateRange := bson.D{}
+	} else if q.ReleaseDateGte != "" || q.ReleaseDateLte != "" {
+		// Use release_date_th when non-empty, fall back to release_date.
+		// Normalize input: gte trims to YYYY-MM-DD; lte appends "Z" so RFC3339 values on that day pass.
+		effectiveDate := bson.D{{Key: "$cond", Value: bson.A{
+			bson.D{{Key: "$gt", Value: bson.A{"$release_date_th", ""}}},
+			"$release_date_th",
+			"$release_date",
+		}}}
+		var arms bson.A
 		if q.ReleaseDateGte != "" {
-			dateRange = append(dateRange, bson.E{Key: "$gte", Value: q.ReleaseDateGte})
+			arms = append(arms, bson.D{{Key: "$gte", Value: bson.A{effectiveDate, normalizeDateGte(q.ReleaseDateGte)}}})
 		}
 		if q.ReleaseDateLte != "" {
-			dateRange = append(dateRange, bson.E{Key: "$lte", Value: q.ReleaseDateLte})
+			arms = append(arms, bson.D{{Key: "$lte", Value: bson.A{effectiveDate, normalizeDateLte(q.ReleaseDateLte)}}})
 		}
-		if len(dateRange) > 0 {
-			match = append(match, bson.E{Key: "release_date", Value: dateRange})
+		var expr any
+		if len(arms) == 1 {
+			expr = arms[0]
+		} else {
+			expr = bson.D{{Key: "$and", Value: arms}}
 		}
+		match = append(match, bson.E{Key: "$expr", Value: expr})
 	}
 	if q.VoteAverageGte > 0 || q.VoteAverageLte > 0 {
 		voteAvg := bson.D{}
@@ -313,30 +324,6 @@ func movieMatchConditions(q DiscoverQuery) bson.D {
 	}
 	if q.Softcore != nil {
 		match = append(match, bson.E{Key: "softcore", Value: *q.Softcore})
-	}
-	if q.WithReleaseDateGte != "" || q.WithReleaseDateLte != "" {
-		// Pick release_date_th when non-empty, fall back to release_date.
-		// String comparison works for both "YYYY-MM-DD" and "YYYY-MM-DDTHH:MM:SSZ" since
-		// the date prefix sorts correctly. Normalize input to YYYY-MM-DD.
-		effectiveDate := bson.D{{Key: "$cond", Value: bson.A{
-			bson.D{{Key: "$gt", Value: bson.A{"$release_date_th", ""}}},
-			"$release_date_th",
-			"$release_date",
-		}}}
-		var arms bson.A
-		if q.WithReleaseDateGte != "" {
-			arms = append(arms, bson.D{{Key: "$gte", Value: bson.A{effectiveDate, normalizeDateGte(q.WithReleaseDateGte)}}})
-		}
-		if q.WithReleaseDateLte != "" {
-			arms = append(arms, bson.D{{Key: "$lte", Value: bson.A{effectiveDate, normalizeDateLte(q.WithReleaseDateLte)}}})
-		}
-		var expr any
-		if len(arms) == 1 {
-			expr = arms[0]
-		} else {
-			expr = bson.D{{Key: "$and", Value: arms}}
-		}
-		match = append(match, bson.E{Key: "$expr", Value: expr})
 	}
 	return match
 }
