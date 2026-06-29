@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"time"
 )
 
@@ -165,9 +166,9 @@ type SearchPage[T any] struct {
 
 // SearchMovie calls /3/search/movie and decodes the result into target.
 func (c *Client) SearchMovie(ctx context.Context, query string, page int, target any) error {
-	url := fmt.Sprintf("%s/search/movie?query=%s&page=%d&language=en-US", baseURL, query, page)
+	endpoint := fmt.Sprintf("%s/search/movie?query=%s&page=%d&language=en-US", baseURL, url.QueryEscape(query), page)
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
 		return fmt.Errorf("tmdb: build request: %w", err)
 	}
@@ -191,9 +192,9 @@ func (c *Client) SearchMovie(ctx context.Context, query string, page int, target
 
 // SearchTV calls /3/search/tv and decodes the result into target.
 func (c *Client) SearchTV(ctx context.Context, query string, page int, target any) error {
-	url := fmt.Sprintf("%s/search/tv?query=%s&page=%d&language=en-US", baseURL, query, page)
+	endpoint := fmt.Sprintf("%s/search/tv?query=%s&page=%d&language=en-US", baseURL, url.QueryEscape(query), page)
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
 		return fmt.Errorf("tmdb: build request: %w", err)
 	}
