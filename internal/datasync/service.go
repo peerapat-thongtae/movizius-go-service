@@ -290,6 +290,147 @@ func (s *SyncService) SyncFromTMDBTrending(ctx context.Context, syncKey, mediaTy
 	}, nil
 }
 
+// SyncFromTMDBChanges syncs items TMDB reports as changed since yesterday, page by page.
+// limit controls how many TMDB pages to fetch per call (default 1 = ~100 items).
+func (s *SyncService) SyncFromTMDBChanges(ctx context.Context, syncKey, mediaType, frequency string, limit int) (*SyncResult, error) {
+	startDate := time.Now().UTC().AddDate(0, 0, -1).Format("2006-01-02")
+
+	m, err := s.repo.GetSyncMeta(ctx, syncKey)
+	if err != nil && !isNotFound(err) {
+		return nil, err
+	}
+
+	if isNotFound(err) {
+		page, err := s.tmdb.GetChanges(ctx, mediaType, startDate, "", 1)
+		if err != nil {
+			return nil, fmt.Errorf("datasync: changes page 1: %w", err)
+		}
+		if err := s.syncChunk(ctx, mediaType, extractChangeIDs(page)); err != nil {
+			return nil, err
+		}
+
+		totalPages := page.TotalPages
+		currentPage := 2
+		status := StatusInProgress
+		var syncDate *time.Time
+		if totalPages <= 1 {
+			currentPage = totalPages + 1
+			status = StatusCompleted
+			now := time.Now().UTC()
+			syncDate = &now
+		}
+
+		now := time.Now().UTC()
+		newMeta := SyncMeta{
+			SyncKey:   syncKey,
+			Source:    SourceTMDBChanges,
+			MediaType: mediaType,
+			Status:    status,
+			SyncDate:  syncDate,
+			Meta: bson.M{
+				"start_date":   startDate,
+				"current_page": currentPage,
+				"total_pages":  totalPages,
+			},
+			CreatedAt: now,
+			UpdatedAt: now,
+		}
+		if err := s.repo.CreateSyncMeta(ctx, newMeta); err != nil {
+			return nil, err
+		}
+		nextSyncAt, _ := nextSyncTime(syncDate, frequency)
+		return &SyncResult{
+			SyncKey:    syncKey,
+			Source:     SourceTMDBChanges,
+			Frequency:  frequency,
+			Total:      totalPages,
+			Processed:  1,
+			Remaining:  totalPages - 1,
+			Status:     status,
+			NextSyncAt: nextSyncAt,
+		}, nil
+	}
+
+	// Frequency check.
+	if m.Status == StatusCompleted {
+		tp := int(toInt64(m.Meta["total_pages"]))
+		nextSyncAt, due := nextSyncTime(m.SyncDate, frequency)
+		if !due {
+			return &SyncResult{
+				SyncKey:    syncKey,
+				Source:     SourceTMDBChanges,
+				Frequency:  frequency,
+				Total:      tp,
+				Processed:  tp,
+				Remaining:  0,
+				Status:     StatusNotDue,
+				NextSyncAt: nextSyncAt,
+			}, nil
+		}
+		// Period elapsed — reset for a new cycle, targeting the current start_date (today - 1).
+		resetMeta := bson.M{"start_date": startDate, "current_page": 1, "total_pages": tp}
+		if err := s.repo.UpdateSyncMeta(ctx, syncKey, resetMeta, StatusInProgress, nil); err != nil {
+			return nil, err
+		}
+		m.Meta = resetMeta
+		m.Status = StatusInProgress
+		m.SyncDate = nil
+	}
+
+	currentPage := int(toInt64(m.Meta["current_page"]))
+	totalPages := int(toInt64(m.Meta["total_pages"]))
+	metaStartDate, _ := m.Meta["start_date"].(string)
+
+	end := currentPage + limit
+	if end > totalPages+1 {
+		end = totalPages + 1
+	}
+
+	for p := currentPage; p < end; p++ {
+		page, err := s.tmdb.GetChanges(ctx, mediaType, metaStartDate, "", p)
+		if err != nil {
+			return nil, fmt.Errorf("datasync: changes page %d: %w", p, err)
+		}
+		if err := s.syncChunk(ctx, mediaType, extractChangeIDs(page)); err != nil {
+			return nil, err
+		}
+	}
+
+	newPage := end
+	status := StatusInProgress
+	var syncDate *time.Time
+	if newPage > totalPages {
+		status = StatusCompleted
+		now := time.Now().UTC()
+		syncDate = &now
+	}
+
+	updatedMeta := bson.M{
+		"start_date":   metaStartDate,
+		"current_page": newPage,
+		"total_pages":  totalPages,
+	}
+	if err := s.repo.UpdateSyncMeta(ctx, syncKey, updatedMeta, status, syncDate); err != nil {
+		return nil, err
+	}
+
+	processed := newPage - 1
+	if processed > totalPages {
+		processed = totalPages
+	}
+	nextSyncAt, _ := nextSyncTime(syncDate, frequency)
+	return &SyncResult{
+		SyncKey:    syncKey,
+		Source:     SourceTMDBChanges,
+		Frequency:  frequency,
+		Total:      totalPages,
+		Processed:  processed,
+		Remaining:  totalPages - processed,
+		Status:     status,
+		NextSyncAt: nextSyncAt,
+	}, nil
+}
+
 // nextSyncTime returns the time of the next sync and whether the period has elapsed.
 func nextSyncTime(syncDate *time.Time, frequency string) (*time.Time, bool) {
 	if syncDate == nil {
@@ -342,6 +483,14 @@ func (s *SyncService) syncChunk(ctx context.Context, mediaType string, ids []int
 }
 
 func extractIDs(page *tmdb.TrendingPage) []int64 {
+	ids := make([]int64, 0, len(page.Results))
+	for _, r := range page.Results {
+		ids = append(ids, r.ID)
+	}
+	return ids
+}
+
+func extractChangeIDs(page *tmdb.ChangesPage) []int64 {
 	ids := make([]int64, 0, len(page.Results))
 	for _, r := range page.Results {
 		ids = append(ids, r.ID)

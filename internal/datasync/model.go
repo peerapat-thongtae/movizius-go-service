@@ -10,6 +10,7 @@ import (
 const (
 	SourceUserTracked  = "user_tracked"
 	SourceTMDBTrending = "tmdb_trending"
+	SourceTMDBChanges  = "tmdb_changes"
 
 	StatusInProgress = "in_progress"
 	StatusCompleted  = "completed"

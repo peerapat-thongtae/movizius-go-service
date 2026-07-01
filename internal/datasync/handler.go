@@ -32,6 +32,8 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux, auth func(http.Handler) htt
 	mux.HandleFunc("POST /sync/tv/tracked", h.SyncTVUserTracked)
 	mux.HandleFunc("POST /sync/movie/trending", h.SyncTrendingMovie)
 	mux.HandleFunc("POST /sync/tv/trending", h.SyncTrendingTV)
+	mux.HandleFunc("POST /sync/movie/changes", h.SyncChangesMovie)
+	mux.HandleFunc("POST /sync/tv/changes", h.SyncChangesTV)
 	mux.HandleFunc("POST /sync/tv/tvmaze-schedule", h.SyncTVMazeSchedule)
 	mux.HandleFunc("POST /sync/movie/cleanup-fields", h.CleanupMovieFields)
 	mux.HandleFunc("POST /sync/tv/cleanup-fields", h.CleanupTVFields)
@@ -108,6 +110,26 @@ func (h *Handler) SyncTrendingTV(w http.ResponseWriter, r *http.Request) {
 		timeWindow = "week"
 	}
 	result, err := h.service.SyncFromTMDBTrending(r.Context(), "sync_trending_tv", "tv", timeWindow, parseFrequency(r), parseLimit(r))
+	if err != nil {
+		response.Error(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	response.Success(w, http.StatusOK, result)
+}
+
+// SyncChangesMovie syncs movie metadata from TMDB's changes feed (start_date = yesterday), one page at a time.
+func (h *Handler) SyncChangesMovie(w http.ResponseWriter, r *http.Request) {
+	result, err := h.service.SyncFromTMDBChanges(r.Context(), "sync_movie_changes", "movie", parseFrequency(r), parseLimit(r))
+	if err != nil {
+		response.Error(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	response.Success(w, http.StatusOK, result)
+}
+
+// SyncChangesTV syncs TV metadata from TMDB's changes feed (start_date = yesterday), one page at a time.
+func (h *Handler) SyncChangesTV(w http.ResponseWriter, r *http.Request) {
+	result, err := h.service.SyncFromTMDBChanges(r.Context(), "sync_tv_changes", "tv", parseFrequency(r), parseLimit(r))
 	if err != nil {
 		response.Error(w, http.StatusInternalServerError, err.Error())
 		return

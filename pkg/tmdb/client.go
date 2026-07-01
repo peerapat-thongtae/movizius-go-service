@@ -156,6 +156,49 @@ func (c *Client) GetTrending(ctx context.Context, mediaType, timeWindow string, 
 	return &result, nil
 }
 
+// ChangesPage is the TMDB paginated response for the changes endpoints.
+type ChangesPage struct {
+	Page         int `json:"page"`
+	TotalPages   int `json:"total_pages"`
+	TotalResults int `json:"total_results"`
+	Results      []struct {
+		ID    int64 `json:"id"`
+		Adult bool  `json:"adult"`
+	} `json:"results"`
+}
+
+// GetChanges fetches /movie/changes or /tv/changes from TMDB for the given date window.
+// mediaType is "movie" or "tv". startDate/endDate are "YYYY-MM-DD" (endDate is optional).
+func (c *Client) GetChanges(ctx context.Context, mediaType, startDate, endDate string, page int) (*ChangesPage, error) {
+	url := fmt.Sprintf("%s/%s/changes?start_date=%s&page=%d", baseURL, mediaType, startDate, page)
+	if endDate != "" {
+		url += "&end_date=" + endDate
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("tmdb: build request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+c.accessToken)
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("tmdb: request /%s/changes: %w", mediaType, err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("tmdb: /%s/changes returned status %d", mediaType, resp.StatusCode)
+	}
+
+	var result ChangesPage
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("tmdb: decode /%s/changes: %w", mediaType, err)
+	}
+	return &result, nil
+}
+
 // SearchPage is the TMDB paginated response for search endpoints.
 type SearchPage[T any] struct {
 	Page         int `json:"page"`
