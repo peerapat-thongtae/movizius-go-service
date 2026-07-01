@@ -18,7 +18,7 @@ type TVRepository interface {
 	GetStatesByUserID(ctx context.Context, userID string) ([]TVStateResponse, error)
 	FindByTMDBIDs(ctx context.Context, ids []int64) (map[int64]TV, error)
 	DiscoverIDs(ctx context.Context, userID string, q DiscoverQuery) (ids []int64, total int, err error)
-	RandomIDs(ctx context.Context, userID string, upcomingOnly bool, limit int, withoutStatus []string) (ids []int64, err error)
+	RandomIDs(ctx context.Context, userID string, upcomingOnly bool, limit int, withoutStatus []string, excludeIDs []int64) (ids []int64, err error)
 	UpsertTVState(ctx context.Context, userID string, tvID int64, episodes []EpisodeWatched) error
 	UpsertEpisodes(ctx context.Context, userID string, req UpsertEpisodesRequest) error
 	UpsertDetail(ctx context.Context, data TVResponse) error
@@ -265,11 +265,14 @@ func (r *mongoTVRepository) DiscoverIDs(ctx context.Context, userID string, q Di
 
 // RandomIDs returns up to limit random TMDB TV IDs from the tv collection, excluding
 // any series whose derived account_status (watchlist/watching/waiting_next_ep/watched,
-// same derivation as GetStates) is in withoutStatus. Series with no tv_user record are
-// always eligible. When upcomingOnly is true, only series with a future
-// next_episode_to_air.air_date (falling back to first_air_date when absent) qualify.
-// Otherwise the pool is narrowed to the top 100 by popularity before sampling.
-func (r *mongoTVRepository) RandomIDs(ctx context.Context, userID string, upcomingOnly bool, limit int, withoutStatus []string) ([]int64, error) {
+// same derivation as GetStates) is in withoutStatus, and excluding any id already
+// present in excludeIDs (ids recently served to this user, see the Redis "seen"
+// cache in TVService.Random). Series with no tv_user record are always eligible.
+// When upcomingOnly is true, only series with a next_episode_to_air.air_date
+// (falling back to first_air_date when absent) within the next 7 days qualify.
+// Otherwise the pool is restricted to popularity > 5 and narrowed to the top
+// 300 by popularity (then by first_air_date as a tiebreaker) before sampling.
+func (r *mongoTVRepository) RandomIDs(ctx context.Context, userID string, upcomingOnly bool, limit int, withoutStatus []string, excludeIDs []int64) ([]int64, error) {
 	if limit <= 0 {
 		return nil, nil
 	}
@@ -277,9 +280,18 @@ func (r *mongoTVRepository) RandomIDs(ctx context.Context, userID string, upcomi
 	today := time.Now().UTC().Format("2006-01-02")
 
 	match := bson.D{{Key: "adult", Value: bson.D{{Key: "$ne", Value: true}}}}
+	if len(excludeIDs) > 0 {
+		match = append(match, bson.E{Key: "id", Value: bson.D{{Key: "$nin", Value: excludeIDs}}})
+	}
 	if upcomingOnly {
+		weekOut := time.Now().UTC().AddDate(0, 0, 7).Format("2006-01-02")
 		effectiveAirDate := bson.D{{Key: "$ifNull", Value: bson.A{"$next_episode_to_air.air_date", "$first_air_date"}}}
-		match = append(match, bson.E{Key: "$expr", Value: bson.D{{Key: "$gte", Value: bson.A{effectiveAirDate, today}}}})
+		match = append(match, bson.E{Key: "$expr", Value: bson.D{{Key: "$and", Value: bson.A{
+			bson.D{{Key: "$gte", Value: bson.A{effectiveAirDate, today}}},
+			bson.D{{Key: "$lte", Value: bson.A{effectiveAirDate, weekOut}}},
+		}}}})
+	} else {
+		match = append(match, bson.E{Key: "popularity", Value: bson.D{{Key: "$gt", Value: 5}}})
 	}
 
 	pipeline := bson.A{
@@ -293,23 +305,25 @@ func (r *mongoTVRepository) RandomIDs(ctx context.Context, userID string, upcomi
 			}},
 			{Key: "as", Value: "_user"},
 		}}},
-		bson.D{{Key: "$unwind", Value: bson.D{
-			{Key: "path", Value: "$_user"},
-			{Key: "preserveNullAndEmptyArrays", Value: true},
-		}}},
 	}
 
 	if len(withoutStatus) > 0 {
+		// $lookup always yields an array; $unwind with preserveNullAndEmptyArrays
+		// keeps an *empty array* (not null) when there's no match, so a null check
+		// on "$_user" never trips — index the single element and check $size instead.
 		pipeline = append(pipeline,
 			bson.D{{Key: "$addFields", Value: bson.D{
+				{Key: "_user_doc", Value: bson.D{{Key: "$arrayElemAt", Value: bson.A{"$_user", 0}}}},
+			}}},
+			bson.D{{Key: "$addFields", Value: bson.D{
 				{Key: "_count_watched", Value: bson.D{{Key: "$size", Value: bson.D{
-					{Key: "$ifNull", Value: bson.A{"$_user.episode_watched", bson.A{}}},
+					{Key: "$ifNull", Value: bson.A{"$_user_doc.episode_watched", bson.A{}}},
 				}}}},
-				{Key: "_max_ep", Value: maxEpReduceExpr("$_user.episode_watched")},
+				{Key: "_max_ep", Value: maxEpReduceExpr("$_user_doc.episode_watched")},
 			}}},
 			bson.D{{Key: "$addFields", Value: bson.D{
 				{Key: "_account_status", Value: bson.D{{Key: "$cond", Value: bson.A{
-					bson.D{{Key: "$eq", Value: bson.A{"$_user", nil}}},
+					bson.D{{Key: "$eq", Value: bson.A{bson.D{{Key: "$size", Value: "$_user"}}, 0}}},
 					nil,
 					bson.D{{Key: "$cond", Value: bson.A{
 						bson.D{{Key: "$and", Value: bson.A{
@@ -344,8 +358,11 @@ func (r *mongoTVRepository) RandomIDs(ctx context.Context, userID string, upcomi
 
 	if !upcomingOnly {
 		pipeline = append(pipeline,
-			bson.D{{Key: "$sort", Value: bson.D{{Key: "popularity", Value: -1}}}},
-			bson.D{{Key: "$limit", Value: 100}},
+			bson.D{{Key: "$sort", Value: bson.D{
+				{Key: "popularity", Value: -1},
+				{Key: "first_air_date", Value: -1},
+			}}},
+			bson.D{{Key: "$limit", Value: 300}},
 		)
 	}
 

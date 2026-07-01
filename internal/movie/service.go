@@ -2,25 +2,66 @@ package movie
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"sync"
 	"time"
 
 	"github.com/peera/movizius-go-service/internal/shared/response"
+	"github.com/peera/movizius-go-service/pkg/cache"
 	"github.com/peera/movizius-go-service/pkg/tmdb"
 )
 
 const appendToResponse = "casts,videos,watch/providers,release_dates,external_ids"
 
+// randomSeenTTL is how long a served movie id stays excluded from that user's
+// future /movie/random calls. Rolling: refreshed on every call.
+const randomSeenTTL = 24 * time.Hour
+
+// randomSeenCap bounds how many ids we remember per user, dropping the oldest.
+const randomSeenCap = 300
+
 // MovieService holds the business logic for the movie feature.
 type MovieService struct {
-	repo MovieRepository
-	tmdb *tmdb.Client
+	repo  MovieRepository
+	tmdb  *tmdb.Client
+	cache cache.Cache
 }
 
 // NewService constructs a MovieService.
-func NewService(repo MovieRepository, tmdb *tmdb.Client) *MovieService {
-	return &MovieService{repo: repo, tmdb: tmdb}
+func NewService(repo MovieRepository, tmdb *tmdb.Client, c cache.Cache) *MovieService {
+	return &MovieService{repo: repo, tmdb: tmdb, cache: c}
+}
+
+func randomSeenKey(userID string) string {
+	return "movie:random:seen:" + userID
+}
+
+// loadSeenIDs returns the ids previously served to this user via Random.
+// Cache errors are swallowed — caching is best-effort and must never fail the request.
+func (s *MovieService) loadSeenIDs(ctx context.Context, userID string) []int64 {
+	raw, ok, err := s.cache.Get(ctx, randomSeenKey(userID))
+	if err != nil || !ok {
+		return nil
+	}
+	var ids []int64
+	if err := json.Unmarshal([]byte(raw), &ids); err != nil {
+		return nil
+	}
+	return ids
+}
+
+// saveSeenIDs merges newIDs into the user's seen-set, caps its size, and refreshes the TTL.
+func (s *MovieService) saveSeenIDs(ctx context.Context, userID string, existing, newIDs []int64) {
+	merged := append(existing, newIDs...)
+	if len(merged) > randomSeenCap {
+		merged = merged[len(merged)-randomSeenCap:]
+	}
+	raw, err := json.Marshal(merged)
+	if err != nil {
+		return
+	}
+	_ = s.cache.Set(ctx, randomSeenKey(userID), string(raw), randomSeenTTL)
 }
 
 // GetStates returns all movie tracking records for the given user.
@@ -78,25 +119,47 @@ func (s *MovieService) Discover(ctx context.Context, userID string, q DiscoverQu
 }
 
 // Random returns up to pageSize movies the user hasn't tracked yet, excluding any
-// movie whose account_status (derived from movie_user) matches withoutStatus,
-// preferring upcoming releases and falling back to popular titles when there
-// aren't enough upcoming candidates.
+// movie whose account_status (derived from movie_user) matches withoutStatus.
+// Results are an even split between upcoming releases and popular titles (e.g.
+// pageSize=20 -> 10 upcoming + 10 popular), topping up from the popular pool
+// if either side comes up short.
 func (s *MovieService) Random(ctx context.Context, userID string, pageSize int, withoutStatus []string) ([]MovieResponse, error) {
-	ids, err := s.repo.RandomIDs(ctx, userID, true, pageSize, withoutStatus)
+	seenIDs := s.loadSeenIDs(ctx, userID)
+
+	upcomingQuota := pageSize / 2
+	popularQuota := pageSize - upcomingQuota
+
+	upcoming, err := s.repo.RandomIDs(ctx, userID, true, upcomingQuota, withoutStatus, seenIDs)
 	if err != nil {
 		return nil, fmt.Errorf("movie service: random upcoming ids: %w", err)
 	}
+	popular, err := s.repo.RandomIDs(ctx, userID, false, popularQuota, withoutStatus, seenIDs)
+	if err != nil {
+		return nil, fmt.Errorf("movie service: random popular ids: %w", err)
+	}
 
-	if len(ids) < pageSize {
-		fallback, err := s.repo.RandomIDs(ctx, userID, false, pageSize-len(ids), withoutStatus)
-		if err != nil {
-			return nil, fmt.Errorf("movie service: random popular ids: %w", err)
-		}
-		seen := make(map[int64]struct{}, len(ids))
-		for _, id := range ids {
+	ids := make([]int64, 0, pageSize)
+	seen := make(map[int64]struct{}, pageSize)
+	for _, id := range upcoming {
+		ids = append(ids, id)
+		seen[id] = struct{}{}
+	}
+	for _, id := range popular {
+		if _, ok := seen[id]; !ok {
+			ids = append(ids, id)
 			seen[id] = struct{}{}
 		}
-		for _, id := range fallback {
+	}
+
+	if len(ids) < pageSize {
+		exclude := make([]int64, 0, len(seenIDs)+len(ids))
+		exclude = append(exclude, seenIDs...)
+		exclude = append(exclude, ids...)
+		topUp, err := s.repo.RandomIDs(ctx, userID, false, pageSize-len(ids), withoutStatus, exclude)
+		if err != nil {
+			return nil, fmt.Errorf("movie service: random top-up ids: %w", err)
+		}
+		for _, id := range topUp {
 			if _, ok := seen[id]; !ok {
 				ids = append(ids, id)
 				seen[id] = struct{}{}
@@ -136,6 +199,8 @@ func (s *MovieService) Random(ctx context.Context, userID string, pageSize int, 
 			return nil, fmt.Errorf("movie service: enrich random from tmdb: %w", err)
 		}
 	}
+
+	s.saveSeenIDs(ctx, userID, seenIDs, ids)
 
 	return results, nil
 }

@@ -3,6 +3,7 @@ package tv
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
 
 	"github.com/peera/movizius-go-service/internal/shared/middleware"
 	"github.com/peera/movizius-go-service/internal/shared/response"
@@ -171,7 +172,7 @@ func (h *Handler) Random(w http.ResponseWriter, r *http.Request) {
 	if total < 1 {
 		total = 20
 	}
-	withoutStatus := stringListParam(r.URL.Query().Get("without_status"))
+	withoutStatus := stringListParam(strings.ToLower(r.URL.Query().Get("without_status")))
 
 	results, err := h.service.Random(r.Context(), userID, total, withoutStatus)
 	if err != nil {

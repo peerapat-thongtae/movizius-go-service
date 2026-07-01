@@ -60,8 +60,8 @@ func New(deps Deps) http.Handler {
 	movieRepo := movie.NewRepository(deps.DB)
 	tvRepo := tv.NewRepository(deps.DB)
 
-	movie.NewHandler(movie.NewService(movieRepo, deps.TMDB)).RegisterRoutes(mux, auth)
-	tv.NewHandler(tv.NewService(tvRepo, deps.TMDB)).RegisterRoutes(mux, auth)
+	movie.NewHandler(movie.NewService(movieRepo, deps.TMDB, deps.Cache)).RegisterRoutes(mux, auth)
+	tv.NewHandler(tv.NewService(tvRepo, deps.TMDB, deps.Cache)).RegisterRoutes(mux, auth)
 	notification.NewHandler(notification.NewService(notification.NewRepository(deps.DB), deps.Firebase)).RegisterRoutes(mux, auth)
 
 	datasync.NewHandler(datasync.NewService(

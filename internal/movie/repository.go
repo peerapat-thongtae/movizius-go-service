@@ -18,7 +18,7 @@ type MovieRepository interface {
 	FindByUserID(ctx context.Context, userID string) ([]MovieUser, error)
 	FindByTMDBIDs(ctx context.Context, ids []int64) (map[int64]Movie, error)
 	DiscoverIDs(ctx context.Context, userID string, q DiscoverQuery) (ids []int64, total int, err error)
-	RandomIDs(ctx context.Context, userID string, upcomingOnly bool, limit int, withoutStatus []string) (ids []int64, err error)
+	RandomIDs(ctx context.Context, userID string, upcomingOnly bool, limit int, withoutStatus []string, excludeIDs []int64) (ids []int64, err error)
 	UpsertState(ctx context.Context, userID string, req UpsertStateRequest) error
 	UpsertDetail(ctx context.Context, data MovieResponse) error
 	DeleteByTMDBID(ctx context.Context, id int64) error
@@ -174,19 +174,39 @@ func (r *mongoMovieRepository) DiscoverIDs(ctx context.Context, userID string, q
 
 // RandomIDs returns up to limit random TMDB movie IDs from the movie collection,
 // excluding any movie whose derived account_status (from the user's movie_user
-// record: "watched" or "watchlist") is in withoutStatus. Movies with no movie_user
-// record are always eligible. When upcomingOnly is true, only movies with
-// release_date in the future qualify. Otherwise the pool is narrowed to the top
-// 100 by popularity before sampling.
-func (r *mongoMovieRepository) RandomIDs(ctx context.Context, userID string, upcomingOnly bool, limit int, withoutStatus []string) ([]int64, error) {
+// record: "watched" or "watchlist") is in withoutStatus, and excluding any id
+// already present in excludeIDs (ids recently served to this user, see the
+// Redis "seen" cache in MovieService.Random). Movies with no movie_user record
+// are always eligible. When upcomingOnly is true, only movies releasing (by
+// release_date_th, falling back to release_date) within the next 7 days
+// qualify. Otherwise the pool is restricted to popularity > 5 and narrowed to
+// the top 300 by popularity (then by release_date_th, falling back to
+// release_date, as a tiebreaker) before sampling.
+func (r *mongoMovieRepository) RandomIDs(ctx context.Context, userID string, upcomingOnly bool, limit int, withoutStatus []string, excludeIDs []int64) ([]int64, error) {
 	if limit <= 0 {
 		return nil, nil
 	}
 
 	match := bson.D{{Key: "adult", Value: bson.D{{Key: "$ne", Value: true}}}}
+	if len(excludeIDs) > 0 {
+		match = append(match, bson.E{Key: "id", Value: bson.D{{Key: "$nin", Value: excludeIDs}}})
+	}
+
+	effectiveReleaseDate := bson.D{{Key: "$cond", Value: bson.A{
+		bson.D{{Key: "$gt", Value: bson.A{"$release_date_th", ""}}},
+		"$release_date_th",
+		"$release_date",
+	}}}
+
 	if upcomingOnly {
 		today := time.Now().UTC().Format("2006-01-02")
-		match = append(match, bson.E{Key: "release_date", Value: bson.D{{Key: "$gte", Value: today}}})
+		weekOut := time.Now().UTC().AddDate(0, 0, 7).Format("2006-01-02")
+		match = append(match, bson.E{Key: "$expr", Value: bson.D{{Key: "$and", Value: bson.A{
+			bson.D{{Key: "$gte", Value: bson.A{effectiveReleaseDate, today}}},
+			bson.D{{Key: "$lte", Value: bson.A{effectiveReleaseDate, weekOut}}},
+		}}}})
+	} else {
+		match = append(match, bson.E{Key: "popularity", Value: bson.D{{Key: "$gt", Value: 5}}})
 	}
 
 	pipeline := bson.A{
@@ -200,20 +220,22 @@ func (r *mongoMovieRepository) RandomIDs(ctx context.Context, userID string, upc
 			}},
 			{Key: "as", Value: "_user"},
 		}}},
-		bson.D{{Key: "$unwind", Value: bson.D{
-			{Key: "path", Value: "$_user"},
-			{Key: "preserveNullAndEmptyArrays", Value: true},
-		}}},
 	}
 
 	if len(withoutStatus) > 0 {
+		// $lookup always yields an array; $unwind with preserveNullAndEmptyArrays
+		// keeps an *empty array* (not null) when there's no match, so a null check
+		// on "$_user" never trips — check $size instead.
 		pipeline = append(pipeline,
 			bson.D{{Key: "$addFields", Value: bson.D{
 				{Key: "_account_status", Value: bson.D{{Key: "$cond", Value: bson.A{
-					bson.D{{Key: "$eq", Value: bson.A{"$_user", nil}}},
+					bson.D{{Key: "$eq", Value: bson.A{bson.D{{Key: "$size", Value: "$_user"}}, 0}}},
 					nil,
 					bson.D{{Key: "$cond", Value: bson.A{
-						bson.D{{Key: "$ifNull", Value: bson.A{"$_user.watched_at", false}}},
+						bson.D{{Key: "$ifNull", Value: bson.A{
+							bson.D{{Key: "$arrayElemAt", Value: bson.A{"$_user.watched_at", 0}}},
+							false,
+						}}},
 						"watched",
 						"watchlist",
 					}}},
@@ -225,8 +247,18 @@ func (r *mongoMovieRepository) RandomIDs(ctx context.Context, userID string, upc
 
 	if !upcomingOnly {
 		pipeline = append(pipeline,
-			bson.D{{Key: "$sort", Value: bson.D{{Key: "popularity", Value: -1}}}},
-			bson.D{{Key: "$limit", Value: 100}},
+			bson.D{{Key: "$addFields", Value: bson.D{
+				{Key: "_effective_release_date", Value: bson.D{{Key: "$cond", Value: bson.A{
+					bson.D{{Key: "$gt", Value: bson.A{"$release_date_th", ""}}},
+					"$release_date_th",
+					"$release_date",
+				}}}},
+			}}},
+			bson.D{{Key: "$sort", Value: bson.D{
+				{Key: "popularity", Value: -1},
+				{Key: "_effective_release_date", Value: -1},
+			}}},
+			bson.D{{Key: "$limit", Value: 300}},
 		)
 	}
 
