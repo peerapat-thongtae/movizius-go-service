@@ -284,6 +284,35 @@ func (s *MovieService) Search(ctx context.Context, query string, page int) (*res
 	}, nil
 }
 
+// GetByID returns full TMDB detail for a single movie, with vote_average/vote_count
+// overlaid from the DB cache (IMDB-sourced, see CLAUDE.md). Returns tmdb.ErrNotFound
+// if TMDB has no such movie.
+func (s *MovieService) GetByID(ctx context.Context, id int64) (*MovieResponse, error) {
+	var detail MovieResponse
+	if err := s.tmdb.GetMovieDetail(ctx, id, appendToResponse, &detail); err != nil {
+		return nil, fmt.Errorf("movie service: get by id %d: %w", id, err)
+	}
+	detail.MediaType = "movie"
+	if detail.ImdbID == "" && detail.ExternalIDs != nil {
+		detail.ImdbID = detail.ExternalIDs.ImdbID
+	}
+	detail.ReleaseDateTH = extractReleaseDateTH(detail)
+
+	cached, err := s.repo.FindByTMDBIDs(ctx, []int64{id})
+	if err != nil {
+		return nil, fmt.Errorf("movie service: fetch cached movie: %w", err)
+	}
+	if db, ok := cached[id]; ok {
+		if db.VoteAverage != nil {
+			detail.VoteAverage = *db.VoteAverage
+		}
+		if db.VoteCount != nil {
+			detail.VoteCount = *db.VoteCount
+		}
+	}
+	return &detail, nil
+}
+
 // UpsertState creates or updates the user's movie tracking record.
 func (s *MovieService) UpsertState(ctx context.Context, userID string, req UpsertStateRequest) error {
 	if req.Status != "watched" && req.Status != "watchlist" {

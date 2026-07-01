@@ -2,11 +2,14 @@ package tv
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/peera/movizius-go-service/internal/shared/middleware"
 	"github.com/peera/movizius-go-service/internal/shared/response"
+	"github.com/peera/movizius-go-service/pkg/tmdb"
 )
 
 // Handler exposes TV endpoints over HTTP.
@@ -28,6 +31,7 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux, auth func(http.Handler) htt
 	mux.Handle("GET /tv/discover", auth(http.HandlerFunc(h.Discover)))
 	mux.Handle("GET /tv/search", auth(http.HandlerFunc(h.Search)))
 	mux.Handle("GET /tv/random", auth(http.HandlerFunc(h.Random)))
+	mux.Handle("GET /tv/{id}", auth(http.HandlerFunc(h.GetByID)))
 }
 
 // Search searches TMDB for TV series matching a query and enriches results with cached DB data.
@@ -186,6 +190,46 @@ func (h *Handler) Random(w http.ResponseWriter, r *http.Request) {
 		TotalPages:   1,
 		Results:      results,
 	})
+}
+
+// GetByID returns full TMDB detail for a single TV series.
+//
+//	@Summary		Get TV detail
+//	@Description	Returns full TMDB detail for a TV series, with vote_average/vote_count and next_episode_to_air.air_date from the local cache.
+//	@Tags			tv
+//	@Produce		json
+//	@Security		BearerAuth
+//	@Param			id	path		int	true	"TMDB TV id"
+//	@Success		200	{object}	tv.TVResponse
+//	@Failure		400	{object}	map[string]string
+//	@Failure		401	{object}	map[string]string
+//	@Failure		404	{object}	map[string]string
+//	@Failure		500	{object}	map[string]string
+//	@Router			/tv/{id} [get]
+func (h *Handler) GetByID(w http.ResponseWriter, r *http.Request) {
+	_, ok := middleware.UserIDFromContext(r.Context())
+	if !ok {
+		response.Error(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		response.Error(w, http.StatusBadRequest, "invalid id")
+		return
+	}
+
+	result, err := h.service.GetByID(r.Context(), id)
+	if err != nil {
+		if errors.Is(err, tmdb.ErrNotFound) {
+			response.Error(w, http.StatusNotFound, "tv series not found")
+			return
+		}
+		response.Error(w, http.StatusInternalServerError, "failed to fetch tv series")
+		return
+	}
+
+	response.Success(w, http.StatusOK, result)
 }
 
 // Discover returns a paginated list of TV series from the local cache, enriched

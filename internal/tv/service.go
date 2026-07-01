@@ -291,6 +291,43 @@ func (s *TVService) Search(ctx context.Context, query string, page int) (*respon
 	}, nil
 }
 
+// GetByID returns full TMDB detail for a single TV series, with vote_average/vote_count
+// and next_episode_to_air.air_date overlaid from the DB cache. Returns tmdb.ErrNotFound
+// if TMDB has no such series.
+func (s *TVService) GetByID(ctx context.Context, id int64) (*TVResponse, error) {
+	var detail TVResponse
+	if err := s.tmdb.GetTVDetail(ctx, id, appendToResponse, &detail); err != nil {
+		return nil, fmt.Errorf("tv service: get by id %d: %w", id, err)
+	}
+	detail.MediaType = "tv"
+	if detail.ImdbID == "" && detail.ExternalIDs != nil {
+		detail.ImdbID = detail.ExternalIDs.ImdbID
+	}
+
+	cached, err := s.repo.FindByTMDBIDs(ctx, []int64{id})
+	if err != nil {
+		return nil, fmt.Errorf("tv service: fetch cached tv: %w", err)
+	}
+	if db, ok := cached[id]; ok {
+		if db.VoteAverage != nil {
+			detail.VoteAverage = *db.VoteAverage
+		}
+		if db.VoteCount != nil {
+			detail.VoteCount = *db.VoteCount
+		}
+	}
+
+	airDates, err := s.repo.GetNextEpisodeAirDatesByIDs(ctx, []int64{id})
+	if err != nil {
+		return nil, fmt.Errorf("tv service: get air dates from db: %w", err)
+	}
+	if airDate, ok := airDates[id]; ok && detail.NextEpisodeToAir != nil {
+		detail.NextEpisodeToAir.AirDate = FlexAirDate(airDate)
+	}
+
+	return &detail, nil
+}
+
 // UpsertTVState creates or updates the user's TV tracking record.
 // For status="watched" it enumerates all episodes from TMDB and populates episode_watched.
 func (s *TVService) UpsertTVState(ctx context.Context, userID string, req UpsertStateRequest) error {

@@ -2,11 +2,14 @@ package movie
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/peera/movizius-go-service/internal/shared/middleware"
 	"github.com/peera/movizius-go-service/internal/shared/response"
+	"github.com/peera/movizius-go-service/pkg/tmdb"
 )
 
 // Handler exposes movie endpoints over HTTP.
@@ -27,6 +30,7 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux, auth func(http.Handler) htt
 	mux.Handle("GET /movie/discover", auth(http.HandlerFunc(h.Discover)))
 	mux.Handle("GET /movie/search", auth(http.HandlerFunc(h.Search)))
 	mux.Handle("GET /movie/random", auth(http.HandlerFunc(h.Random)))
+	mux.Handle("GET /movie/{id}", auth(http.HandlerFunc(h.GetByID)))
 }
 
 // Search searches TMDB for movies matching a query and enriches results with cached DB data.
@@ -176,6 +180,46 @@ func (h *Handler) Random(w http.ResponseWriter, r *http.Request) {
 		TotalPages:   1,
 		Results:      results,
 	})
+}
+
+// GetByID returns full TMDB detail for a single movie.
+//
+//	@Summary		Get movie detail
+//	@Description	Returns full TMDB detail for a movie, with vote_average/vote_count from the local cache.
+//	@Tags			movies
+//	@Produce		json
+//	@Security		BearerAuth
+//	@Param			id	path		int	true	"TMDB movie id"
+//	@Success		200	{object}	movie.MovieResponse
+//	@Failure		400	{object}	map[string]string
+//	@Failure		401	{object}	map[string]string
+//	@Failure		404	{object}	map[string]string
+//	@Failure		500	{object}	map[string]string
+//	@Router			/movie/{id} [get]
+func (h *Handler) GetByID(w http.ResponseWriter, r *http.Request) {
+	_, ok := middleware.UserIDFromContext(r.Context())
+	if !ok {
+		response.Error(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		response.Error(w, http.StatusBadRequest, "invalid id")
+		return
+	}
+
+	result, err := h.service.GetByID(r.Context(), id)
+	if err != nil {
+		if errors.Is(err, tmdb.ErrNotFound) {
+			response.Error(w, http.StatusNotFound, "movie not found")
+			return
+		}
+		response.Error(w, http.StatusInternalServerError, "failed to fetch movie")
+		return
+	}
+
+	response.Success(w, http.StatusOK, result)
 }
 
 // Discover returns a paginated list of movies from the local cache, enriched
