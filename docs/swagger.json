@@ -1,8 +1,16 @@
 {
     "swagger": "2.0",
     "info": {
-        "contact": {}
+        "description": "Movie \u0026 TV Series tracking backend.",
+        "title": "Movizius API",
+        "contact": {
+            "name": "Movizius",
+            "email": "peera.thongtae@gmail.com"
+        },
+        "version": "1.0"
     },
+    "host": "localhost:8080",
+    "basePath": "/api",
     "paths": {
         "/health": {
             "get": {
@@ -228,6 +236,136 @@
                 }
             }
         },
+        "/movie/random": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns movies the user has no watchlist/watched record for, preferring upcoming releases and falling back to popular titles. Results are randomized on every call.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "movies"
+                ],
+                "summary": "Random movie suggestions",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Page number (echoed back, does not affect sampling; default 1)",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Comma-separated account statuses to exclude, e.g. watchlist,watched",
+                        "name": "without_status",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Number of results (default 20)",
+                        "name": "total",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_peera_movizius-go-service_internal_shared_response.Page-internal_movie_MovieResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/movie/search": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Search TMDB for movies. Results are enriched with genres and metadata from the local cache when available.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "movies"
+                ],
+                "summary": "Search movies",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Search query",
+                        "name": "q",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Page number (default 1)",
+                        "name": "page",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_peera_movizius-go-service_internal_shared_response.Page-internal_movie_MovieResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/movie/states": {
             "get": {
                 "security": [
@@ -360,6 +498,49 @@
                         "description": "OK",
                         "schema": {
                             "$ref": "#/definitions/internal_notification.TestNotificationResult"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/notification/tv/today": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Finds TV shows with next_episode_to_air.air_date = today, matches them to users' watchlists, and sends each user a personalised push notification. Data payload includes type=\"tv_airing_today\" for in-app navigation.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "notification"
+                ],
+                "summary": "Send today-airing TV notifications",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_notification.TodayAiringResult"
                         }
                     },
                     "401": {
@@ -581,6 +762,18 @@
                         "description": "TV series type (e.g. Scripted, Documentary)",
                         "name": "with_type",
                         "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Next episode air date \u003e= (YYYY-MM-DD or RFC3339)",
+                        "name": "with_next_episode_air_date.gte",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Next episode air date \u003c= (YYYY-MM-DD or RFC3339)",
+                        "name": "with_next_episode_air_date.lte",
+                        "in": "query"
                     }
                 ],
                 "responses": {
@@ -674,6 +867,136 @@
                 }
             }
         },
+        "/tv/random": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns TV series the user has no watchlist/watched record for, preferring series with an upcoming episode (next_episode_to_air, falling back to first_air_date) and falling back to popular titles. Results are randomized on every call.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "tv"
+                ],
+                "summary": "Random TV suggestions",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Page number (echoed back, does not affect sampling; default 1)",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Comma-separated account statuses to exclude, e.g. watchlist,watched,watching,waiting_next_ep",
+                        "name": "without_status",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Number of results (default 20)",
+                        "name": "total",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_peera_movizius-go-service_internal_shared_response.Page-internal_tv_TVResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/tv/search": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Search TMDB for TV series. Results are enriched with genres and metadata from the local cache when available.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "tv"
+                ],
+                "summary": "Search TV series",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Search query",
+                        "name": "q",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Page number (default 1)",
+                        "name": "page",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_peera_movizius-go-service_internal_shared_response.Page-internal_tv_TVResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/tv/states": {
             "get": {
                 "security": [
@@ -693,7 +1016,7 @@
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/github_com_peera_movizius-go-service_internal_shared_response.Page-internal_tv_TVState"
+                            "$ref": "#/definitions/github_com_peera_movizius-go-service_internal_shared_response.Page-internal_tv_TVStateResponse"
                         }
                     },
                     "401": {
@@ -779,7 +1102,7 @@
                 }
             }
         },
-        "github_com_peera_movizius-go-service_internal_shared_response.Page-internal_tv_TVState": {
+        "github_com_peera_movizius-go-service_internal_shared_response.Page-internal_tv_TVStateResponse": {
             "type": "object",
             "properties": {
                 "page": {
@@ -788,7 +1111,7 @@
                 "results": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/internal_tv.TVState"
+                        "$ref": "#/definitions/internal_tv.TVStateResponse"
                     }
                 },
                 "total_pages": {
@@ -1011,14 +1334,11 @@
                 "release_date": {
                     "type": "string"
                 },
+                "release_date_th": {
+                    "type": "string"
+                },
                 "release_dates": {
                     "$ref": "#/definitions/internal_movie.ReleaseDates"
-                },
-                "release_dates_th": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/internal_movie.ReleaseDate"
-                    }
                 },
                 "revenue": {
                     "type": "integer"
@@ -1056,13 +1376,8 @@
                 "vote_count": {
                     "type": "integer"
                 },
-                "watch/providers": {
-                    "description": "JSON key is \"watch/providers\" per TMDB's append_to_response convention.",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/internal_movie.WatchProviders"
-                        }
-                    ]
+                "watch_providers": {
+                    "$ref": "#/definitions/internal_movie.WatchProviderCountry"
                 }
             }
         },
@@ -1277,20 +1592,12 @@
                 }
             }
         },
-        "internal_movie.WatchProviders": {
-            "type": "object",
-            "properties": {
-                "results": {
-                    "type": "object",
-                    "additionalProperties": {
-                        "$ref": "#/definitions/internal_movie.WatchProviderCountry"
-                    }
-                }
-            }
-        },
         "internal_notification.RegisterDeviceRequest": {
             "type": "object",
             "properties": {
+                "device_id": {
+                    "type": "string"
+                },
                 "fcm_token": {
                     "type": "string"
                 },
@@ -1309,6 +1616,20 @@
                     "type": "integer"
                 },
                 "total": {
+                    "type": "integer"
+                }
+            }
+        },
+        "internal_notification.TodayAiringResult": {
+            "type": "object",
+            "properties": {
+                "failed": {
+                    "type": "integer"
+                },
+                "succeeded": {
+                    "type": "integer"
+                },
+                "users_notified": {
                     "type": "integer"
                 }
             }
@@ -1444,6 +1765,9 @@
         "internal_tv.EpisodeInput": {
             "type": "object",
             "properties": {
+                "episode_id": {
+                    "type": "integer"
+                },
                 "episode_number": {
                     "type": "integer"
                 },
@@ -1617,6 +1941,46 @@
                 }
             }
         },
+        "internal_tv.StateEpisode": {
+            "type": "object",
+            "properties": {
+                "air_date": {
+                    "type": "string"
+                },
+                "episode_number": {
+                    "type": "integer"
+                },
+                "episode_type": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "season_number": {
+                    "type": "integer"
+                }
+            }
+        },
+        "internal_tv.StateSeason": {
+            "type": "object",
+            "properties": {
+                "air_date": {
+                    "type": "string"
+                },
+                "episode_count": {
+                    "type": "integer"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "season_number": {
+                    "type": "integer"
+                }
+            }
+        },
         "internal_tv.TVResponse": {
             "type": "object",
             "properties": {
@@ -1767,12 +2131,12 @@
                 "vote_count": {
                     "type": "integer"
                 },
-                "watch/providers": {
-                    "$ref": "#/definitions/internal_tv.WatchProviders"
+                "watch_providers": {
+                    "$ref": "#/definitions/internal_tv.WatchProviderCountry"
                 }
             }
         },
-        "internal_tv.TVState": {
+        "internal_tv.TVStateResponse": {
             "type": "object",
             "properties": {
                 "account_status": {
@@ -1793,6 +2157,9 @@
                 "is_anime": {
                     "type": "boolean"
                 },
+                "last_episode_to_air": {
+                    "$ref": "#/definitions/internal_tv.StateEpisode"
+                },
                 "latest_state": {
                     "type": "string"
                 },
@@ -1802,8 +2169,14 @@
                 "max_watched_ep": {
                     "$ref": "#/definitions/internal_tv.EpisodeWatched"
                 },
+                "media_type": {
+                    "type": "string"
+                },
                 "name": {
                     "type": "string"
+                },
+                "next_episode_to_air": {
+                    "$ref": "#/definitions/internal_tv.StateEpisode"
                 },
                 "number_of_episodes": {
                     "type": "integer"
@@ -1811,8 +2184,26 @@
                 "number_of_seasons": {
                     "type": "integer"
                 },
+                "seasons": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_tv.StateSeason"
+                    }
+                },
                 "user_id": {
                     "type": "string"
+                },
+                "vote_average": {
+                    "type": "number"
+                },
+                "vote_count": {
+                    "type": "integer"
+                },
+                "watched_seasons": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
                 },
                 "watchlisted_at": {
                     "type": "string"
@@ -1927,17 +2318,14 @@
                     }
                 }
             }
-        },
-        "internal_tv.WatchProviders": {
-            "type": "object",
-            "properties": {
-                "results": {
-                    "type": "object",
-                    "additionalProperties": {
-                        "$ref": "#/definitions/internal_tv.WatchProviderCountry"
-                    }
-                }
-            }
+        }
+    },
+    "securityDefinitions": {
+        "BearerAuth": {
+            "description": "JWT bearer token — format: \"Bearer \u003ctoken\u003e\"",
+            "type": "apiKey",
+            "name": "Authorization",
+            "in": "header"
         }
     }
 }

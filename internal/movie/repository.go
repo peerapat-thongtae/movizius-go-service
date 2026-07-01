@@ -18,6 +18,7 @@ type MovieRepository interface {
 	FindByUserID(ctx context.Context, userID string) ([]MovieUser, error)
 	FindByTMDBIDs(ctx context.Context, ids []int64) (map[int64]Movie, error)
 	DiscoverIDs(ctx context.Context, userID string, q DiscoverQuery) (ids []int64, total int, err error)
+	RandomIDs(ctx context.Context, userID string, upcomingOnly bool, limit int, withoutStatus []string) (ids []int64, err error)
 	UpsertState(ctx context.Context, userID string, req UpsertStateRequest) error
 	UpsertDetail(ctx context.Context, data MovieResponse) error
 	DeleteByTMDBID(ctx context.Context, id int64) error
@@ -169,6 +170,89 @@ func (r *mongoMovieRepository) DiscoverIDs(ctx context.Context, userID string, q
 		ids = append(ids, d.ID)
 	}
 	return ids, total, nil
+}
+
+// RandomIDs returns up to limit random TMDB movie IDs from the movie collection,
+// excluding any movie whose derived account_status (from the user's movie_user
+// record: "watched" or "watchlist") is in withoutStatus. Movies with no movie_user
+// record are always eligible. When upcomingOnly is true, only movies with
+// release_date in the future qualify. Otherwise the pool is narrowed to the top
+// 100 by popularity before sampling.
+func (r *mongoMovieRepository) RandomIDs(ctx context.Context, userID string, upcomingOnly bool, limit int, withoutStatus []string) ([]int64, error) {
+	if limit <= 0 {
+		return nil, nil
+	}
+
+	match := bson.D{{Key: "adult", Value: bson.D{{Key: "$ne", Value: true}}}}
+	if upcomingOnly {
+		today := time.Now().UTC().Format("2006-01-02")
+		match = append(match, bson.E{Key: "release_date", Value: bson.D{{Key: "$gte", Value: today}}})
+	}
+
+	pipeline := bson.A{
+		bson.D{{Key: "$match", Value: match}},
+		bson.D{{Key: "$lookup", Value: bson.D{
+			{Key: "from", Value: "movie_user"},
+			{Key: "localField", Value: "id"},
+			{Key: "foreignField", Value: "id"},
+			{Key: "pipeline", Value: bson.A{
+				bson.D{{Key: "$match", Value: bson.D{{Key: "user_id", Value: userID}}}},
+			}},
+			{Key: "as", Value: "_user"},
+		}}},
+		bson.D{{Key: "$unwind", Value: bson.D{
+			{Key: "path", Value: "$_user"},
+			{Key: "preserveNullAndEmptyArrays", Value: true},
+		}}},
+	}
+
+	if len(withoutStatus) > 0 {
+		pipeline = append(pipeline,
+			bson.D{{Key: "$addFields", Value: bson.D{
+				{Key: "_account_status", Value: bson.D{{Key: "$cond", Value: bson.A{
+					bson.D{{Key: "$eq", Value: bson.A{"$_user", nil}}},
+					nil,
+					bson.D{{Key: "$cond", Value: bson.A{
+						bson.D{{Key: "$ifNull", Value: bson.A{"$_user.watched_at", false}}},
+						"watched",
+						"watchlist",
+					}}},
+				}}}},
+			}}},
+			bson.D{{Key: "$match", Value: bson.D{{Key: "_account_status", Value: bson.D{{Key: "$nin", Value: withoutStatus}}}}}},
+		)
+	}
+
+	if !upcomingOnly {
+		pipeline = append(pipeline,
+			bson.D{{Key: "$sort", Value: bson.D{{Key: "popularity", Value: -1}}}},
+			bson.D{{Key: "$limit", Value: 100}},
+		)
+	}
+
+	pipeline = append(pipeline,
+		bson.D{{Key: "$sample", Value: bson.D{{Key: "size", Value: limit}}}},
+		bson.D{{Key: "$project", Value: bson.D{{Key: "_id", Value: 0}, {Key: "id", Value: 1}}}},
+	)
+
+	cursor, err := r.db.Collection("movie").Aggregate(ctx, pipeline)
+	if err != nil {
+		return nil, fmt.Errorf("movie: random aggregate: %w", err)
+	}
+	defer cursor.Close(ctx)
+
+	var docs []struct {
+		ID int64 `bson:"id"`
+	}
+	if err := cursor.All(ctx, &docs); err != nil {
+		return nil, fmt.Errorf("movie: decode random: %w", err)
+	}
+
+	ids := make([]int64, 0, len(docs))
+	for _, d := range docs {
+		ids = append(ids, d.ID)
+	}
+	return ids, nil
 }
 
 // buildDiscoverPipeline runs on the movie collection (no account_status filter).

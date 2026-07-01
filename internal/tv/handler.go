@@ -26,6 +26,7 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux, auth func(http.Handler) htt
 	mux.Handle("GET /tv/states", auth(http.HandlerFunc(h.GetStates)))
 	mux.Handle("GET /tv/discover", auth(http.HandlerFunc(h.Discover)))
 	mux.Handle("GET /tv/search", auth(http.HandlerFunc(h.Search)))
+	mux.Handle("GET /tv/random", auth(http.HandlerFunc(h.Random)))
 }
 
 // Search searches TMDB for TV series matching a query and enriches results with cached DB data.
@@ -138,6 +139,52 @@ func (h *Handler) UpsertEpisodes(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// Random returns a page of TV series the user hasn't watchlisted/watched yet,
+// prioritizing series with an upcoming episode/premiere and falling back to popular titles.
+//
+//	@Summary		Random TV suggestions
+//	@Description	Returns TV series the user has no watchlist/watched record for, preferring series with an upcoming episode (next_episode_to_air, falling back to first_air_date) and falling back to popular titles. Results are randomized on every call.
+//	@Tags			tv
+//	@Produce		json
+//	@Security		BearerAuth
+//	@Param			page			query		int		false	"Page number (echoed back, does not affect sampling; default 1)"
+//	@Param			without_status	query		string	false	"Comma-separated account statuses to exclude, e.g. watchlist,watched,watching,waiting_next_ep"
+//	@Param			total			query		int		false	"Number of results (default 20)"
+//	@Success		200				{object}	response.Page[tv.TVResponse]
+//	@Failure		401				{object}	map[string]string
+//	@Failure		500				{object}	map[string]string
+//	@Router			/tv/random [get]
+func (h *Handler) Random(w http.ResponseWriter, r *http.Request) {
+	userID, ok := middleware.UserIDFromContext(r.Context())
+	if !ok {
+		response.Error(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
+	page := intParam(r.URL.Query().Get("page"), 1)
+	if page < 1 {
+		page = 1
+	}
+	total := intParam(r.URL.Query().Get("total"), 20)
+	if total < 1 {
+		total = 20
+	}
+	withoutStatus := stringListParam(r.URL.Query().Get("without_status"))
+
+	results, err := h.service.Random(r.Context(), userID, total, withoutStatus)
+	if err != nil {
+		response.Error(w, http.StatusInternalServerError, "failed to get random tv series")
+		return
+	}
+
+	response.Success(w, http.StatusOK, response.Page[TVResponse]{
+		Page:         page,
+		TotalResults: len(results),
+		TotalPages:   1,
+		Results:      results,
+	})
 }
 
 // Discover returns a paginated list of TV series from the local cache, enriched

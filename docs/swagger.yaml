@@ -1,3 +1,4 @@
+basePath: /api
 definitions:
   github_com_peera_movizius-go-service_internal_shared_response.Page-internal_movie_MovieResponse:
     properties:
@@ -38,13 +39,13 @@ definitions:
       total_results:
         type: integer
     type: object
-  github_com_peera_movizius-go-service_internal_shared_response.Page-internal_tv_TVState:
+  github_com_peera_movizius-go-service_internal_shared_response.Page-internal_tv_TVStateResponse:
     properties:
       page:
         type: integer
       results:
         items:
-          $ref: '#/definitions/internal_tv.TVState'
+          $ref: '#/definitions/internal_tv.TVStateResponse'
         type: array
       total_pages:
         type: integer
@@ -190,12 +191,10 @@ definitions:
         type: array
       release_date:
         type: string
+      release_date_th:
+        type: string
       release_dates:
         $ref: '#/definitions/internal_movie.ReleaseDates'
-      release_dates_th:
-        items:
-          $ref: '#/definitions/internal_movie.ReleaseDate'
-        type: array
       revenue:
         type: integer
       runtime:
@@ -220,10 +219,8 @@ definitions:
         type: number
       vote_count:
         type: integer
-      watch/providers:
-        allOf:
-        - $ref: '#/definitions/internal_movie.WatchProviders'
-        description: JSON key is "watch/providers" per TMDB's append_to_response convention.
+      watch_providers:
+        $ref: '#/definitions/internal_movie.WatchProviderCountry'
     type: object
   internal_movie.MovieUser:
     properties:
@@ -362,15 +359,10 @@ definitions:
           $ref: '#/definitions/internal_movie.Flatrate'
         type: array
     type: object
-  internal_movie.WatchProviders:
-    properties:
-      results:
-        additionalProperties:
-          $ref: '#/definitions/internal_movie.WatchProviderCountry'
-        type: object
-    type: object
   internal_notification.RegisterDeviceRequest:
     properties:
+      device_id:
+        type: string
       fcm_token:
         type: string
       platform:
@@ -383,6 +375,15 @@ definitions:
       succeeded:
         type: integer
       total:
+        type: integer
+    type: object
+  internal_notification.TodayAiringResult:
+    properties:
+      failed:
+        type: integer
+      succeeded:
+        type: integer
+      users_notified:
         type: integer
     type: object
   internal_tv.CastMember:
@@ -471,6 +472,8 @@ definitions:
     type: object
   internal_tv.EpisodeInput:
     properties:
+      episode_id:
+        type: integer
       episode_number:
         type: integer
       season_number:
@@ -583,6 +586,32 @@ definitions:
       name:
         type: string
     type: object
+  internal_tv.StateEpisode:
+    properties:
+      air_date:
+        type: string
+      episode_number:
+        type: integer
+      episode_type:
+        type: string
+      id:
+        type: integer
+      season_number:
+        type: integer
+    type: object
+  internal_tv.StateSeason:
+    properties:
+      air_date:
+        type: string
+      episode_count:
+        type: integer
+      id:
+        type: integer
+      name:
+        type: string
+      season_number:
+        type: integer
+    type: object
   internal_tv.TVResponse:
     properties:
       adult:
@@ -683,10 +712,10 @@ definitions:
         type: number
       vote_count:
         type: integer
-      watch/providers:
-        $ref: '#/definitions/internal_tv.WatchProviders'
+      watch_providers:
+        $ref: '#/definitions/internal_tv.WatchProviderCountry'
     type: object
-  internal_tv.TVState:
+  internal_tv.TVStateResponse:
     properties:
       account_status:
         type: string
@@ -700,20 +729,38 @@ definitions:
         type: integer
       is_anime:
         type: boolean
+      last_episode_to_air:
+        $ref: '#/definitions/internal_tv.StateEpisode'
       latest_state:
         type: string
       latest_watched:
         type: string
       max_watched_ep:
         $ref: '#/definitions/internal_tv.EpisodeWatched'
+      media_type:
+        type: string
       name:
         type: string
+      next_episode_to_air:
+        $ref: '#/definitions/internal_tv.StateEpisode'
       number_of_episodes:
         type: integer
       number_of_seasons:
         type: integer
+      seasons:
+        items:
+          $ref: '#/definitions/internal_tv.StateSeason'
+        type: array
       user_id:
         type: string
+      vote_average:
+        type: number
+      vote_count:
+        type: integer
+      watched_seasons:
+        items:
+          type: integer
+        type: array
       watchlisted_at:
         type: string
     type: object
@@ -788,15 +835,14 @@ definitions:
           $ref: '#/definitions/internal_tv.Flatrate'
         type: array
     type: object
-  internal_tv.WatchProviders:
-    properties:
-      results:
-        additionalProperties:
-          $ref: '#/definitions/internal_tv.WatchProviderCountry'
-        type: object
-    type: object
+host: localhost:8080
 info:
-  contact: {}
+  contact:
+    email: peera.thongtae@gmail.com
+    name: Movizius
+  description: Movie & TV Series tracking backend.
+  title: Movizius API
+  version: "1.0"
 paths:
   /health:
     get:
@@ -945,6 +991,92 @@ paths:
       summary: Discover movies
       tags:
       - movies
+  /movie/random:
+    get:
+      description: Returns movies the user has no watchlist/watched record for, preferring
+        upcoming releases and falling back to popular titles. Results are randomized
+        on every call.
+      parameters:
+      - description: Page number (echoed back, does not affect sampling; default 1)
+        in: query
+        name: page
+        type: integer
+      - description: Comma-separated account statuses to exclude, e.g. watchlist,watched
+        in: query
+        name: without_status
+        type: string
+      - description: Number of results (default 20)
+        in: query
+        name: total
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_peera_movizius-go-service_internal_shared_response.Page-internal_movie_MovieResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Random movie suggestions
+      tags:
+      - movies
+  /movie/search:
+    get:
+      description: Search TMDB for movies. Results are enriched with genres and metadata
+        from the local cache when available.
+      parameters:
+      - description: Search query
+        in: query
+        name: q
+        required: true
+        type: string
+      - description: Page number (default 1)
+        in: query
+        name: page
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_peera_movizius-go-service_internal_shared_response.Page-internal_movie_MovieResponse'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Search movies
+      tags:
+      - movies
   /movie/states:
     get:
       description: Returns all movie watchlist/history records for the authenticated
@@ -1043,6 +1175,35 @@ paths:
       security:
       - BearerAuth: []
       summary: Send test notification
+      tags:
+      - notification
+  /notification/tv/today:
+    post:
+      description: Finds TV shows with next_episode_to_air.air_date = today, matches
+        them to users' watchlists, and sends each user a personalised push notification.
+        Data payload includes type="tv_airing_today" for in-app navigation.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_notification.TodayAiringResult'
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Send today-airing TV notifications
       tags:
       - notification
   /tv:
@@ -1171,6 +1332,14 @@ paths:
         in: query
         name: with_type
         type: string
+      - description: Next episode air date >= (YYYY-MM-DD or RFC3339)
+        in: query
+        name: with_next_episode_air_date.gte
+        type: string
+      - description: Next episode air date <= (YYYY-MM-DD or RFC3339)
+        in: query
+        name: with_next_episode_air_date.lte
+        type: string
       produces:
       - application/json
       responses:
@@ -1235,6 +1404,93 @@ paths:
       summary: Add watched episodes
       tags:
       - tv
+  /tv/random:
+    get:
+      description: Returns TV series the user has no watchlist/watched record for,
+        preferring series with an upcoming episode (next_episode_to_air, falling back
+        to first_air_date) and falling back to popular titles. Results are randomized
+        on every call.
+      parameters:
+      - description: Page number (echoed back, does not affect sampling; default 1)
+        in: query
+        name: page
+        type: integer
+      - description: Comma-separated account statuses to exclude, e.g. watchlist,watched,watching,waiting_next_ep
+        in: query
+        name: without_status
+        type: string
+      - description: Number of results (default 20)
+        in: query
+        name: total
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_peera_movizius-go-service_internal_shared_response.Page-internal_tv_TVResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Random TV suggestions
+      tags:
+      - tv
+  /tv/search:
+    get:
+      description: Search TMDB for TV series. Results are enriched with genres and
+        metadata from the local cache when available.
+      parameters:
+      - description: Search query
+        in: query
+        name: q
+        required: true
+        type: string
+      - description: Page number (default 1)
+        in: query
+        name: page
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_peera_movizius-go-service_internal_shared_response.Page-internal_tv_TVResponse'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Search TV series
+      tags:
+      - tv
   /tv/states:
     get:
       description: Returns all TV series watchlist/history records for the authenticated
@@ -1245,7 +1501,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/github_com_peera_movizius-go-service_internal_shared_response.Page-internal_tv_TVState'
+            $ref: '#/definitions/github_com_peera_movizius-go-service_internal_shared_response.Page-internal_tv_TVStateResponse'
         "401":
           description: Unauthorized
           schema:
@@ -1263,4 +1519,10 @@ paths:
       summary: List TV states
       tags:
       - tv
+securityDefinitions:
+  BearerAuth:
+    description: 'JWT bearer token — format: "Bearer <token>"'
+    in: header
+    name: Authorization
+    type: apiKey
 swagger: "2.0"

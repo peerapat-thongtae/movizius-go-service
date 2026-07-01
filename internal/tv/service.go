@@ -76,6 +76,78 @@ func (s *TVService) Discover(ctx context.Context, userID string, q DiscoverQuery
 	return results, total, nil
 }
 
+// Random returns up to pageSize TV series the user hasn't tracked yet, excluding
+// any series whose derived account_status (watchlist/watching/waiting_next_ep/watched)
+// is in withoutStatus, preferring series with an upcoming episode/premiere and
+// falling back to popular titles when there aren't enough upcoming candidates.
+func (s *TVService) Random(ctx context.Context, userID string, pageSize int, withoutStatus []string) ([]TVResponse, error) {
+	ids, err := s.repo.RandomIDs(ctx, userID, true, pageSize, withoutStatus)
+	if err != nil {
+		return nil, fmt.Errorf("tv service: random upcoming ids: %w", err)
+	}
+
+	if len(ids) < pageSize {
+		fallback, err := s.repo.RandomIDs(ctx, userID, false, pageSize-len(ids), withoutStatus)
+		if err != nil {
+			return nil, fmt.Errorf("tv service: random popular ids: %w", err)
+		}
+		seen := make(map[int64]struct{}, len(ids))
+		for _, id := range ids {
+			seen[id] = struct{}{}
+		}
+		for _, id := range fallback {
+			if _, ok := seen[id]; !ok {
+				ids = append(ids, id)
+				seen[id] = struct{}{}
+			}
+		}
+	}
+
+	if len(ids) == 0 {
+		return []TVResponse{}, nil
+	}
+
+	results := make([]TVResponse, len(ids))
+	errs := make([]error, len(ids))
+
+	var wg sync.WaitGroup
+	for i, id := range ids {
+		wg.Add(1)
+		go func(idx int, tvID int64) {
+			defer wg.Done()
+			var detail TVResponse
+			if err := s.tmdb.GetTVDetail(ctx, tvID, appendToResponse, &detail); err != nil {
+				errs[idx] = fmt.Errorf("tmdb detail for id %d: %w", tvID, err)
+				return
+			}
+			detail.MediaType = "tv"
+			if detail.ImdbID == "" && detail.ExternalIDs != nil {
+				detail.ImdbID = detail.ExternalIDs.ImdbID
+			}
+			results[idx] = detail
+		}(i, id)
+	}
+	wg.Wait()
+
+	for _, err := range errs {
+		if err != nil {
+			return nil, fmt.Errorf("tv service: enrich random from tmdb: %w", err)
+		}
+	}
+
+	airDates, err := s.repo.GetNextEpisodeAirDatesByIDs(ctx, ids)
+	if err != nil {
+		return nil, fmt.Errorf("tv service: get air dates from db: %w", err)
+	}
+	for i := range results {
+		if airDate, ok := airDates[results[i].ID]; ok && results[i].NextEpisodeToAir != nil {
+			results[i].NextEpisodeToAir.AirDate = FlexAirDate(airDate)
+		}
+	}
+
+	return results, nil
+}
+
 // searchResult is a minimal TMDB search result used only to collect IDs.
 type searchResult struct {
 	ID int64 `json:"id"`

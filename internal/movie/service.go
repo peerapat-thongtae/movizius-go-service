@@ -77,6 +77,69 @@ func (s *MovieService) Discover(ctx context.Context, userID string, q DiscoverQu
 	return results, total, nil
 }
 
+// Random returns up to pageSize movies the user hasn't tracked yet, excluding any
+// movie whose account_status (derived from movie_user) matches withoutStatus,
+// preferring upcoming releases and falling back to popular titles when there
+// aren't enough upcoming candidates.
+func (s *MovieService) Random(ctx context.Context, userID string, pageSize int, withoutStatus []string) ([]MovieResponse, error) {
+	ids, err := s.repo.RandomIDs(ctx, userID, true, pageSize, withoutStatus)
+	if err != nil {
+		return nil, fmt.Errorf("movie service: random upcoming ids: %w", err)
+	}
+
+	if len(ids) < pageSize {
+		fallback, err := s.repo.RandomIDs(ctx, userID, false, pageSize-len(ids), withoutStatus)
+		if err != nil {
+			return nil, fmt.Errorf("movie service: random popular ids: %w", err)
+		}
+		seen := make(map[int64]struct{}, len(ids))
+		for _, id := range ids {
+			seen[id] = struct{}{}
+		}
+		for _, id := range fallback {
+			if _, ok := seen[id]; !ok {
+				ids = append(ids, id)
+				seen[id] = struct{}{}
+			}
+		}
+	}
+
+	if len(ids) == 0 {
+		return []MovieResponse{}, nil
+	}
+
+	results := make([]MovieResponse, len(ids))
+	errs := make([]error, len(ids))
+
+	var wg sync.WaitGroup
+	for i, id := range ids {
+		wg.Add(1)
+		go func(idx int, movieID int64) {
+			defer wg.Done()
+			var detail MovieResponse
+			if err := s.tmdb.GetMovieDetail(ctx, movieID, appendToResponse, &detail); err != nil {
+				errs[idx] = fmt.Errorf("tmdb detail for id %d: %w", movieID, err)
+				return
+			}
+			detail.MediaType = "movie"
+			if detail.ImdbID == "" && detail.ExternalIDs != nil {
+				detail.ImdbID = detail.ExternalIDs.ImdbID
+			}
+			detail.ReleaseDateTH = extractReleaseDateTH(detail)
+			results[idx] = detail
+		}(i, id)
+	}
+	wg.Wait()
+
+	for _, err := range errs {
+		if err != nil {
+			return nil, fmt.Errorf("movie service: enrich random from tmdb: %w", err)
+		}
+	}
+
+	return results, nil
+}
+
 // searchResult is a minimal TMDB search result used only to collect IDs.
 type searchResult struct {
 	ID int64 `json:"id"`

@@ -25,6 +25,7 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux, auth func(http.Handler) htt
 	mux.Handle("GET /movie/states", auth(http.HandlerFunc(h.GetStates)))
 	mux.Handle("GET /movie/discover", auth(http.HandlerFunc(h.Discover)))
 	mux.Handle("GET /movie/search", auth(http.HandlerFunc(h.Search)))
+	mux.Handle("GET /movie/random", auth(http.HandlerFunc(h.Random)))
 }
 
 // Search searches TMDB for movies matching a query and enriches results with cached DB data.
@@ -128,6 +129,52 @@ func (h *Handler) GetStates(w http.ResponseWriter, r *http.Request) {
 	}
 
 	response.Paginated(w, http.StatusOK, states, 1, 1)
+}
+
+// Random returns a page of movies the user hasn't watchlisted/watched yet,
+// prioritizing upcoming releases and falling back to popular titles.
+//
+//	@Summary		Random movie suggestions
+//	@Description	Returns movies the user has no watchlist/watched record for, preferring upcoming releases and falling back to popular titles. Results are randomized on every call.
+//	@Tags			movies
+//	@Produce		json
+//	@Security		BearerAuth
+//	@Param			page			query		int		false	"Page number (echoed back, does not affect sampling; default 1)"
+//	@Param			without_status	query		string	false	"Comma-separated account statuses to exclude, e.g. watchlist,watched"
+//	@Param			total			query		int		false	"Number of results (default 20)"
+//	@Success		200				{object}	response.Page[movie.MovieResponse]
+//	@Failure		401				{object}	map[string]string
+//	@Failure		500				{object}	map[string]string
+//	@Router			/movie/random [get]
+func (h *Handler) Random(w http.ResponseWriter, r *http.Request) {
+	userID, ok := middleware.UserIDFromContext(r.Context())
+	if !ok {
+		response.Error(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
+	page := intParam(r.URL.Query().Get("page"), 1)
+	if page < 1 {
+		page = 1
+	}
+	total := intParam(r.URL.Query().Get("total"), 20)
+	if total < 1 {
+		total = 20
+	}
+	withoutStatus := stringListParam(r.URL.Query().Get("without_status"))
+
+	results, err := h.service.Random(r.Context(), userID, total, withoutStatus)
+	if err != nil {
+		response.Error(w, http.StatusInternalServerError, "failed to get random movies")
+		return
+	}
+
+	response.Success(w, http.StatusOK, response.Page[MovieResponse]{
+		Page:         page,
+		TotalResults: len(results),
+		TotalPages:   1,
+		Results:      results,
+	})
 }
 
 // Discover returns a paginated list of movies from the local cache, enriched

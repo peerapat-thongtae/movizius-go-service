@@ -18,6 +18,7 @@ type TVRepository interface {
 	GetStatesByUserID(ctx context.Context, userID string) ([]TVStateResponse, error)
 	FindByTMDBIDs(ctx context.Context, ids []int64) (map[int64]TV, error)
 	DiscoverIDs(ctx context.Context, userID string, q DiscoverQuery) (ids []int64, total int, err error)
+	RandomIDs(ctx context.Context, userID string, upcomingOnly bool, limit int, withoutStatus []string) (ids []int64, err error)
 	UpsertTVState(ctx context.Context, userID string, tvID int64, episodes []EpisodeWatched) error
 	UpsertEpisodes(ctx context.Context, userID string, req UpsertEpisodesRequest) error
 	UpsertDetail(ctx context.Context, data TVResponse) error
@@ -260,6 +261,117 @@ func (r *mongoTVRepository) DiscoverIDs(ctx context.Context, userID string, q Di
 		ids = append(ids, d.ID)
 	}
 	return ids, total, nil
+}
+
+// RandomIDs returns up to limit random TMDB TV IDs from the tv collection, excluding
+// any series whose derived account_status (watchlist/watching/waiting_next_ep/watched,
+// same derivation as GetStates) is in withoutStatus. Series with no tv_user record are
+// always eligible. When upcomingOnly is true, only series with a future
+// next_episode_to_air.air_date (falling back to first_air_date when absent) qualify.
+// Otherwise the pool is narrowed to the top 100 by popularity before sampling.
+func (r *mongoTVRepository) RandomIDs(ctx context.Context, userID string, upcomingOnly bool, limit int, withoutStatus []string) ([]int64, error) {
+	if limit <= 0 {
+		return nil, nil
+	}
+
+	today := time.Now().UTC().Format("2006-01-02")
+
+	match := bson.D{{Key: "adult", Value: bson.D{{Key: "$ne", Value: true}}}}
+	if upcomingOnly {
+		effectiveAirDate := bson.D{{Key: "$ifNull", Value: bson.A{"$next_episode_to_air.air_date", "$first_air_date"}}}
+		match = append(match, bson.E{Key: "$expr", Value: bson.D{{Key: "$gte", Value: bson.A{effectiveAirDate, today}}}})
+	}
+
+	pipeline := bson.A{
+		bson.D{{Key: "$match", Value: match}},
+		bson.D{{Key: "$lookup", Value: bson.D{
+			{Key: "from", Value: "tv_user"},
+			{Key: "localField", Value: "id"},
+			{Key: "foreignField", Value: "id"},
+			{Key: "pipeline", Value: bson.A{
+				bson.D{{Key: "$match", Value: bson.D{{Key: "user_id", Value: userID}}}},
+			}},
+			{Key: "as", Value: "_user"},
+		}}},
+		bson.D{{Key: "$unwind", Value: bson.D{
+			{Key: "path", Value: "$_user"},
+			{Key: "preserveNullAndEmptyArrays", Value: true},
+		}}},
+	}
+
+	if len(withoutStatus) > 0 {
+		pipeline = append(pipeline,
+			bson.D{{Key: "$addFields", Value: bson.D{
+				{Key: "_count_watched", Value: bson.D{{Key: "$size", Value: bson.D{
+					{Key: "$ifNull", Value: bson.A{"$_user.episode_watched", bson.A{}}},
+				}}}},
+				{Key: "_max_ep", Value: maxEpReduceExpr("$_user.episode_watched")},
+			}}},
+			bson.D{{Key: "$addFields", Value: bson.D{
+				{Key: "_account_status", Value: bson.D{{Key: "$cond", Value: bson.A{
+					bson.D{{Key: "$eq", Value: bson.A{"$_user", nil}}},
+					nil,
+					bson.D{{Key: "$cond", Value: bson.A{
+						bson.D{{Key: "$and", Value: bson.A{
+							bson.D{{Key: "$gt", Value: bson.A{"$number_of_episodes", 0}}},
+							bson.D{{Key: "$eq", Value: bson.A{"$_count_watched", "$number_of_episodes"}}},
+							bson.D{{Key: "$ne", Value: bson.A{"$status", "Returning Series"}}},
+						}}},
+						"watched",
+						bson.D{{Key: "$cond", Value: bson.A{
+							bson.D{{Key: "$and", Value: bson.A{
+								bson.D{{Key: "$gt", Value: bson.A{"$_count_watched", 0}}},
+								bson.D{{Key: "$eq", Value: bson.A{"$_max_ep.season_number", "$last_episode_to_air.season_number"}}},
+								bson.D{{Key: "$eq", Value: bson.A{"$_max_ep.episode_number", "$last_episode_to_air.episode_number"}}},
+								bson.D{{Key: "$or", Value: bson.A{
+									bson.D{{Key: "$eq", Value: bson.A{"$next_episode_to_air", nil}}},
+									bson.D{{Key: "$gt", Value: bson.A{"$next_episode_to_air.air_date", today}}},
+								}}},
+							}}},
+							"waiting_next_ep",
+							bson.D{{Key: "$cond", Value: bson.A{
+								bson.D{{Key: "$gt", Value: bson.A{"$_count_watched", 0}}},
+								"watching",
+								"watchlist",
+							}}},
+						}}},
+					}}},
+				}}}},
+			}}},
+			bson.D{{Key: "$match", Value: bson.D{{Key: "_account_status", Value: bson.D{{Key: "$nin", Value: withoutStatus}}}}}},
+		)
+	}
+
+	if !upcomingOnly {
+		pipeline = append(pipeline,
+			bson.D{{Key: "$sort", Value: bson.D{{Key: "popularity", Value: -1}}}},
+			bson.D{{Key: "$limit", Value: 100}},
+		)
+	}
+
+	pipeline = append(pipeline,
+		bson.D{{Key: "$sample", Value: bson.D{{Key: "size", Value: limit}}}},
+		bson.D{{Key: "$project", Value: bson.D{{Key: "_id", Value: 0}, {Key: "id", Value: 1}}}},
+	)
+
+	cursor, err := r.db.Collection("tv").Aggregate(ctx, pipeline)
+	if err != nil {
+		return nil, fmt.Errorf("tv: random aggregate: %w", err)
+	}
+	defer cursor.Close(ctx)
+
+	var docs []struct {
+		ID int64 `bson:"id"`
+	}
+	if err := cursor.All(ctx, &docs); err != nil {
+		return nil, fmt.Errorf("tv: decode random: %w", err)
+	}
+
+	ids := make([]int64, 0, len(docs))
+	for _, d := range docs {
+		ids = append(ids, d.ID)
+	}
+	return ids, nil
 }
 
 // buildDiscoverPipeline runs on the tv collection (no account_status filter).
