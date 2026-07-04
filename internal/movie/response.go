@@ -195,3 +195,11 @@ type Flatrate struct {
 	ProviderName    string `bson:"provider_name"    json:"provider_name"`
 	DisplayPriority int    `bson:"display_priority" json:"display_priority"`
 }
+
+// ReconcileResult reports the outcome of ReconcilePopularity.
+type ReconcileResult struct {
+	Scanned       int64 // movie docs examined
+	Updated       int64 // popularity values changed
+	Deleted       int64 // movie docs removed (cascaded to movie_user)
+	SkippedDelete bool  // true when the safety guard aborted the delete phase
+}

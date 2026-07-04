@@ -1,9 +1,9 @@
-name: Sync movie popularity
+name: Sync tv popularity
 
 on:
   schedule:
-    # 09:00 UTC daily — TMDB publishes the daily export around 08:00 UTC.
-    - cron: "0 9 * * *"
+    # 09:30 UTC daily — offset from the movie job to spread DB load.
+    - cron: "30 9 * * *"
   workflow_dispatch: {}
 
 jobs:
@@ -19,7 +19,7 @@ jobs:
         with:
           go-version: "1.23"
 
-      - name: Reconcile movie popularity from TMDB export
+      - name: Reconcile tv popularity from TMDB export
         env:
           MONGO_URI: ${{ secrets.MONGO_URI }}
-        run: go run ./cmd/sync-popularity movie
+        run: go run ./cmd/sync-popularity tv

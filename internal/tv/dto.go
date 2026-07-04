@@ -8,29 +8,29 @@ import (
 
 // DiscoverQuery holds parsed query params for the TV discover endpoint.
 type DiscoverQuery struct {
-	Page                 int
-	SortBy               string
-	WithGenres           []int64
-	WithoutGenres        []int64
-	FirstAirDateYear     int
-	FirstAirDateGte      string
-	FirstAirDateLte      string
-	VoteAverageGte       float64
-	VoteAverageLte       float64
-	VoteCountGte         int64
-	WithOriginalLanguage string
-	IncludeAdult         bool
-	Softcore             *bool
-	WithWatchProviders   []int64
-	WatchRegion          string
-	WithAccountStatus    []string // "watchlist","watching","waiting_next_ep","watched"
-	WithoutAccountStatus []string
-	WithNetworks         []int64
-	IsAnime              *bool
-	WithStatus              string
-	WithType                string
-	NextEpisodeAirDateGte   string
-	NextEpisodeAirDateLte   string
+	Page                  int
+	SortBy                string
+	WithGenres            []int64
+	WithoutGenres         []int64
+	FirstAirDateYear      int
+	FirstAirDateGte       string
+	FirstAirDateLte       string
+	VoteAverageGte        float64
+	VoteAverageLte        float64
+	VoteCountGte          int64
+	WithOriginalLanguage  string
+	IncludeAdult          bool
+	Softcore              *bool
+	WithWatchProviders    []int64
+	WatchRegion           string
+	WithAccountStatus     []string // "watchlist","watching","waiting_next_ep","watched"
+	WithoutAccountStatus  []string
+	WithNetworks          []int64
+	IsAnime               *bool
+	WithStatus            string
+	WithType              string
+	NextEpisodeAirDateGte string
+	NextEpisodeAirDateLte string
 }
 
 // UpsertStateRequest is the body for POST /tv.
@@ -58,23 +58,23 @@ func discoverQueryFromRequest(r *http.Request) DiscoverQuery {
 	q := r.URL.Query()
 
 	dq := DiscoverQuery{
-		Page:                 intParam(q.Get("page"), 1),
-		SortBy:               stringParam(q.Get("sort_by"), "popularity.desc"),
-		WithGenres:           int64ListParam(q.Get("with_genres")),
-		WithoutGenres:        int64ListParam(q.Get("without_genres")),
-		FirstAirDateYear:     intParam(q.Get("first_air_date_year"), 0),
-		FirstAirDateGte:      q.Get("first_air_date.gte"),
-		FirstAirDateLte:      q.Get("first_air_date.lte"),
-		VoteAverageGte:       float64Param(q.Get("vote_average.gte"), 0),
-		VoteAverageLte:       float64Param(q.Get("vote_average.lte"), 0),
-		VoteCountGte:         int64Param(q.Get("vote_count.gte"), 0),
-		WithOriginalLanguage: q.Get("with_original_language"),
-		IncludeAdult:         q.Get("include_adult") == "true",
-		WithWatchProviders:   int64ListParam(q.Get("with_watch_providers")),
-		WatchRegion:          strings.ToUpper(q.Get("watch_region")),
-		WithAccountStatus:    stringListParam(q.Get("with_account_status")),
-		WithoutAccountStatus: stringListParam(q.Get("without_account_status")),
-		WithNetworks:         int64ListParam(q.Get("with_networks")),
+		Page:                  intParam(q.Get("page"), 1),
+		SortBy:                stringParam(q.Get("sort_by"), "popularity.desc"),
+		WithGenres:            int64ListParam(q.Get("with_genres")),
+		WithoutGenres:         int64ListParam(q.Get("without_genres")),
+		FirstAirDateYear:      intParam(q.Get("first_air_date_year"), 0),
+		FirstAirDateGte:       q.Get("first_air_date.gte"),
+		FirstAirDateLte:       q.Get("first_air_date.lte"),
+		VoteAverageGte:        float64Param(q.Get("vote_average.gte"), 0),
+		VoteAverageLte:        float64Param(q.Get("vote_average.lte"), 0),
+		VoteCountGte:          int64Param(q.Get("vote_count.gte"), 0),
+		WithOriginalLanguage:  q.Get("with_original_language"),
+		IncludeAdult:          q.Get("include_adult") == "true",
+		WithWatchProviders:    int64ListParam(q.Get("with_watch_providers")),
+		WatchRegion:           strings.ToUpper(q.Get("watch_region")),
+		WithAccountStatus:     stringListParam(q.Get("with_account_status")),
+		WithoutAccountStatus:  stringListParam(q.Get("without_account_status")),
+		WithNetworks:          int64ListParam(q.Get("with_networks")),
 		WithStatus:            q.Get("with_status"),
 		WithType:              q.Get("with_type"),
 		NextEpisodeAirDateGte: q.Get("with_next_episode_air_date.gte"),

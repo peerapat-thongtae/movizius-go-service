@@ -11,10 +11,11 @@ import (
 	"time"
 )
 
-// movieIDExportURLFmt is the daily TMDB movie-ID export. The date is formatted
-// as MM_DD_YYYY. The file is newline-delimited JSON, one object per line, gzipped.
-// It lives on files.tmdb.org and requires no authentication.
-const movieIDExportURLFmt = "http://files.tmdb.org/p/exports/movie_ids_%s.json.gz"
+// idExportURLFmt is a daily TMDB ID export. The first verb is the export kind
+// ("movie" or "tv"), the second is the date formatted as MM_DD_YYYY. Each file
+// is newline-delimited JSON, one object per line, gzipped. They live on
+// files.tmdb.org and require no authentication.
+const idExportURLFmt = "http://files.tmdb.org/p/exports/%s_ids_%s.json.gz"
 
 // exportDateLayout matches the MM_DD_YYYY format in the export filename.
 const exportDateLayout = "01_02_2006"
@@ -27,21 +28,32 @@ const exportScanBuffer = 1024 * 1024
 const exportHTTPTimeout = 5 * time.Minute
 
 // FetchMovieIDPopularity downloads the TMDB daily movie-ID export for the given
-// date and returns a map of TMDB movie id -> popularity. If the export for the
-// requested date is not yet published (404), it retries once with the previous
-// day. The returned map is the source of truth for which movie ids still exist
-// upstream and their current popularity.
+// date and returns a map of TMDB movie id -> popularity.
 func FetchMovieIDPopularity(ctx context.Context, date time.Time) (map[int64]float64, error) {
-	result, err := fetchMovieIDPopularityFor(ctx, date)
+	return fetchIDPopularity(ctx, "movie", date)
+}
+
+// FetchTVIDPopularity downloads the TMDB daily tv-ID export for the given date
+// and returns a map of TMDB tv id -> popularity.
+func FetchTVIDPopularity(ctx context.Context, date time.Time) (map[int64]float64, error) {
+	return fetchIDPopularity(ctx, "tv", date)
+}
+
+// fetchIDPopularity downloads the export of the given kind ("movie" or "tv") and
+// returns a map of id -> popularity, the source of truth for which ids still
+// exist upstream and their current popularity. If the export for the requested
+// date is not yet published (404), it retries once with the previous day.
+func fetchIDPopularity(ctx context.Context, kind string, date time.Time) (map[int64]float64, error) {
+	result, err := fetchIDPopularityFor(ctx, kind, date)
 	if err == ErrNotFound {
 		// Today's export may not be published yet — fall back to yesterday.
-		return fetchMovieIDPopularityFor(ctx, date.AddDate(0, 0, -1))
+		return fetchIDPopularityFor(ctx, kind, date.AddDate(0, 0, -1))
 	}
 	return result, err
 }
 
-func fetchMovieIDPopularityFor(ctx context.Context, date time.Time) (map[int64]float64, error) {
-	url := fmt.Sprintf(movieIDExportURLFmt, date.Format(exportDateLayout))
+func fetchIDPopularityFor(ctx context.Context, kind string, date time.Time) (map[int64]float64, error) {
+	url := fmt.Sprintf(idExportURLFmt, kind, date.Format(exportDateLayout))
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {

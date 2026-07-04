@@ -41,52 +41,52 @@ func (d *FlexAirDate) UnmarshalBSONValue(t bsontype.Type, raw []byte) error {
 // TV represents a TV series document in the tv collection (TMDB metadata cache).
 // JSON keys mirror the TMDB API / Dart model (snake_case); BSON keys mirror MongoDB storage.
 type TVResponse struct {
-	Adult               bool                `bson:"adult"                  json:"adult"`
-	BackdropPath        string              `bson:"backdrop_path"          json:"backdrop_path"`
-	CreatedBy           []CreatedBy         `bson:"created_by"             json:"created_by"`
-	EpisodeRunTime      []int               `bson:"episode_run_time"       json:"episode_run_time"`
-	FirstAirDate        string              `bson:"first_air_date"         json:"first_air_date"`
-	Genres              []Genre             `bson:"genres"                 json:"genres"`
-	Homepage            string              `bson:"homepage"               json:"homepage"`
-	ID                  int64               `bson:"id"                     json:"id"`
-	InProduction        bool                `bson:"in_production"          json:"in_production"`
-	Languages           []string            `bson:"languages"              json:"languages"`
-	LastAirDate         string              `bson:"last_air_date"          json:"last_air_date"`
-	LastEpisodeToAir    *Episode            `bson:"last_episode_to_air"    json:"last_episode_to_air"`
-	Name                string              `bson:"name"                   json:"name"`
-	NextEpisodeToAir    *Episode            `bson:"next_episode_to_air"    json:"next_episode_to_air"`
-	Networks            []Network           `bson:"networks"               json:"networks"`
-	NumberOfEpisodes    int                 `bson:"number_of_episodes"     json:"number_of_episodes"`
-	NumberOfSeasons     int                 `bson:"number_of_seasons"      json:"number_of_seasons"`
-	OriginCountry       []string            `bson:"origin_country"         json:"origin_country"`
-	OriginalLanguage    string              `bson:"original_language"      json:"original_language"`
-	OriginalName        string              `bson:"original_name"          json:"original_name"`
-	Overview            string              `bson:"overview"               json:"overview"`
-	Popularity          float64             `bson:"popularity"             json:"popularity"`
-	PosterPath          string              `bson:"poster_path"            json:"poster_path"`
-	ProductionCompanies []ProductionCompany `bson:"production_companies"   json:"production_companies"`
-	ProductionCountries []ProductionCountry `bson:"production_countries"   json:"production_countries"`
-	Seasons             []Season            `bson:"seasons"                json:"seasons"`
-	Softcore            bool                `bson:"softcore"               json:"softcore"`
-	SpokenLanguages     []SpokenLanguage    `bson:"spoken_languages"       json:"spoken_languages"`
-	Status              string              `bson:"status"                 json:"status"`
-	Tagline             string              `bson:"tagline"                json:"tagline"`
-	Type                string              `bson:"type"                   json:"type"`
-	VoteAverage         float64             `bson:"vote_average"           json:"vote_average"`
-	VoteCount           int64               `bson:"vote_count"             json:"vote_count"`
-	Credits             *Credits            `bson:"credits"                json:"credits"`
-	ExternalIDs         *ExternalIDs        `bson:"external_ids"           json:"external_ids"`
-	Videos              *Videos             `bson:"videos"                 json:"videos"`
-	MediaType           string              `bson:"media_type"             json:"media_type,omitempty"`
-	ImdbID              string              `bson:"imdb_id"                json:"imdb_id,omitempty"`
-	IsAnime             bool                `bson:"is_anime"               json:"is_anime"`
+	Adult               bool                  `bson:"adult"                  json:"adult"`
+	BackdropPath        string                `bson:"backdrop_path"          json:"backdrop_path"`
+	CreatedBy           []CreatedBy           `bson:"created_by"             json:"created_by"`
+	EpisodeRunTime      []int                 `bson:"episode_run_time"       json:"episode_run_time"`
+	FirstAirDate        string                `bson:"first_air_date"         json:"first_air_date"`
+	Genres              []Genre               `bson:"genres"                 json:"genres"`
+	Homepage            string                `bson:"homepage"               json:"homepage"`
+	ID                  int64                 `bson:"id"                     json:"id"`
+	InProduction        bool                  `bson:"in_production"          json:"in_production"`
+	Languages           []string              `bson:"languages"              json:"languages"`
+	LastAirDate         string                `bson:"last_air_date"          json:"last_air_date"`
+	LastEpisodeToAir    *Episode              `bson:"last_episode_to_air"    json:"last_episode_to_air"`
+	Name                string                `bson:"name"                   json:"name"`
+	NextEpisodeToAir    *Episode              `bson:"next_episode_to_air"    json:"next_episode_to_air"`
+	Networks            []Network             `bson:"networks"               json:"networks"`
+	NumberOfEpisodes    int                   `bson:"number_of_episodes"     json:"number_of_episodes"`
+	NumberOfSeasons     int                   `bson:"number_of_seasons"      json:"number_of_seasons"`
+	OriginCountry       []string              `bson:"origin_country"         json:"origin_country"`
+	OriginalLanguage    string                `bson:"original_language"      json:"original_language"`
+	OriginalName        string                `bson:"original_name"          json:"original_name"`
+	Overview            string                `bson:"overview"               json:"overview"`
+	Popularity          float64               `bson:"popularity"             json:"popularity"`
+	PosterPath          string                `bson:"poster_path"            json:"poster_path"`
+	ProductionCompanies []ProductionCompany   `bson:"production_companies"   json:"production_companies"`
+	ProductionCountries []ProductionCountry   `bson:"production_countries"   json:"production_countries"`
+	Seasons             []Season              `bson:"seasons"                json:"seasons"`
+	Softcore            bool                  `bson:"softcore"               json:"softcore"`
+	SpokenLanguages     []SpokenLanguage      `bson:"spoken_languages"       json:"spoken_languages"`
+	Status              string                `bson:"status"                 json:"status"`
+	Tagline             string                `bson:"tagline"                json:"tagline"`
+	Type                string                `bson:"type"                   json:"type"`
+	VoteAverage         float64               `bson:"vote_average"           json:"vote_average"`
+	VoteCount           int64                 `bson:"vote_count"             json:"vote_count"`
+	Credits             *Credits              `bson:"credits"                json:"credits"`
+	ExternalIDs         *ExternalIDs          `bson:"external_ids"           json:"external_ids"`
+	Videos              *Videos               `bson:"videos"                 json:"videos"`
+	MediaType           string                `bson:"media_type"             json:"media_type,omitempty"`
+	ImdbID              string                `bson:"imdb_id"                json:"imdb_id,omitempty"`
+	IsAnime             bool                  `bson:"is_anime"               json:"is_anime"`
 	WatchProviders      *WatchProviderCountry `bson:"watch_providers"        json:"watch_providers"`
-	UpdatedAt           time.Time           `bson:"updated_at"             json:"-"`
+	UpdatedAt           time.Time             `bson:"updated_at"             json:"-"`
 }
 
 // StateEpisode is a trimmed episode shape used in TVStateResponse (last/next episode to air).
 type StateEpisode struct {
-	ID            int64  `bson:"id"             json:"id"`
+	ID            int64       `bson:"id"             json:"id"`
 	AirDate       FlexAirDate `bson:"air_date"       json:"air_date"`
 	EpisodeNumber int         `bson:"episode_number" json:"episode_number"`
 	EpisodeType   string      `bson:"episode_type"   json:"episode_type"`
@@ -160,19 +160,19 @@ type Genre struct {
 // Episode merges LastEpisodeToAir and NextEpisodeToAir — the only difference
 // is that runtime/still_path are optional on the latter, which nullable fields cover.
 type Episode struct {
-	ID             int64   `bson:"id"              json:"id"`
-	Name           string  `bson:"name"            json:"name"`
-	Overview       string  `bson:"overview"        json:"overview"`
-	VoteAverage    float64 `bson:"vote_average"    json:"vote_average"`
-	VoteCount      int     `bson:"vote_count"      json:"vote_count"`
+	ID             int64       `bson:"id"              json:"id"`
+	Name           string      `bson:"name"            json:"name"`
+	Overview       string      `bson:"overview"        json:"overview"`
+	VoteAverage    float64     `bson:"vote_average"    json:"vote_average"`
+	VoteCount      int         `bson:"vote_count"      json:"vote_count"`
 	AirDate        FlexAirDate `bson:"air_date"        json:"air_date"`
 	EpisodeNumber  int         `bson:"episode_number"  json:"episode_number"`
 	EpisodeType    string      `bson:"episode_type"    json:"episode_type"`
 	ProductionCode string      `bson:"production_code" json:"production_code"`
-	Runtime        *int    `bson:"runtime"         json:"runtime"`
-	SeasonNumber   int     `bson:"season_number"   json:"season_number"`
-	ShowID         int64   `bson:"show_id"         json:"show_id"`
-	StillPath      *string `bson:"still_path"      json:"still_path"`
+	Runtime        *int        `bson:"runtime"         json:"runtime"`
+	SeasonNumber   int         `bson:"season_number"   json:"season_number"`
+	ShowID         int64       `bson:"show_id"         json:"show_id"`
+	StillPath      *string     `bson:"still_path"      json:"still_path"`
 }
 
 type Network struct {
@@ -283,3 +283,10 @@ type Flatrate struct {
 	DisplayPriority int    `bson:"display_priority" json:"display_priority"`
 }
 
+// ReconcileResult reports the outcome of ReconcilePopularity.
+type ReconcileResult struct {
+	Scanned       int64 // tv docs examined
+	Updated       int64 // popularity values changed
+	Deleted       int64 // tv docs removed (cascaded to tv_user)
+	SkippedDelete bool  // true when the safety guard aborted the delete phase
+}

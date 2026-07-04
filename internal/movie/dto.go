@@ -6,14 +6,6 @@ import (
 	"strings"
 )
 
-// ReconcileResult reports the outcome of ReconcilePopularity.
-type ReconcileResult struct {
-	Scanned       int64 // movie docs examined
-	Updated       int64 // popularity values changed
-	Deleted       int64 // movie docs removed (cascaded to movie_user)
-	SkippedDelete bool  // true when the safety guard aborted the delete phase
-}
-
 // DiscoverQuery holds parsed query params for the movie discover endpoint.
 type DiscoverQuery struct {
 	Page                 int
