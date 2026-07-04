@@ -2,6 +2,7 @@ package notification
 
 import (
 	"encoding/json"
+	"log/slog"
 	"net/http"
 
 	"github.com/peera/movizius-go-service/internal/shared/middleware"
@@ -17,11 +18,12 @@ var validPlatforms = map[string]bool{
 // Handler exposes notification endpoints over HTTP.
 type Handler struct {
 	service *NotificationService
+	log     *slog.Logger
 }
 
 // NewHandler constructs a notification Handler.
-func NewHandler(service *NotificationService) *Handler {
-	return &Handler{service: service}
+func NewHandler(service *NotificationService, log *slog.Logger) *Handler {
+	return &Handler{service: service, log: log}
 }
 
 // RegisterRoutes binds notification routes onto the given mux.
@@ -73,6 +75,7 @@ func (h *Handler) RegisterDevice(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.service.RegisterDevice(r.Context(), userID, req); err != nil {
+		h.log.Error("failed to register device", "error", err, "user", userID, "path", r.URL.Path)
 		response.Error(w, http.StatusInternalServerError, "failed to register device")
 		return
 	}
@@ -100,6 +103,7 @@ func (h *Handler) SendTest(w http.ResponseWriter, r *http.Request) {
 
 	result, err := h.service.SendTestToAll(r.Context())
 	if err != nil {
+		h.log.Error("failed to send test notification", "error", err, "path", r.URL.Path)
 		response.Error(w, http.StatusInternalServerError, "failed to send test notification")
 		return
 	}
@@ -122,6 +126,7 @@ func (h *Handler) SendTest(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) SendTodayAiring(w http.ResponseWriter, r *http.Request) {
 	result, err := h.service.SendTodayAiringTV(r.Context())
 	if err != nil {
+		h.log.Error("failed to send today airing notifications", "error", err, "path", r.URL.Path)
 		response.Error(w, http.StatusInternalServerError, "failed to send today airing notifications")
 		return
 	}
@@ -134,6 +139,7 @@ func (h *Handler) SendTodayAiring(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) SendTodayReleasingMovies(w http.ResponseWriter, r *http.Request) {
 	result, err := h.service.SendTodayReleasingMovies(r.Context())
 	if err != nil {
+		h.log.Error("failed to send today releasing movie notifications", "error", err, "path", r.URL.Path)
 		response.Error(w, http.StatusInternalServerError, "failed to send today releasing movie notifications")
 		return
 	}

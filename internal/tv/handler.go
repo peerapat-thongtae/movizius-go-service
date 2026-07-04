@@ -3,6 +3,7 @@ package tv
 import (
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
@@ -15,11 +16,12 @@ import (
 // Handler exposes TV endpoints over HTTP.
 type Handler struct {
 	service *TVService
+	log     *slog.Logger
 }
 
 // NewHandler constructs a TV Handler.
-func NewHandler(service *TVService) *Handler {
-	return &Handler{service: service}
+func NewHandler(service *TVService, log *slog.Logger) *Handler {
+	return &Handler{service: service, log: log}
 }
 
 // RegisterRoutes binds TV routes onto the given mux.
@@ -68,6 +70,7 @@ func (h *Handler) Search(w http.ResponseWriter, r *http.Request) {
 
 	result, err := h.service.Search(r.Context(), q, page)
 	if err != nil {
+		h.log.Error("failed to search tv series", "error", err, "query", q, "path", r.URL.Path)
 		response.Error(w, http.StatusInternalServerError, "failed to search tv series")
 		return
 	}
@@ -180,6 +183,7 @@ func (h *Handler) Random(w http.ResponseWriter, r *http.Request) {
 
 	results, err := h.service.Random(r.Context(), userID, total, withoutStatus)
 	if err != nil {
+		h.log.Error("failed to get random tv series", "error", err, "user", userID, "path", r.URL.Path)
 		response.Error(w, http.StatusInternalServerError, "failed to get random tv series")
 		return
 	}
@@ -225,6 +229,7 @@ func (h *Handler) GetByID(w http.ResponseWriter, r *http.Request) {
 			response.Error(w, http.StatusNotFound, "tv series not found")
 			return
 		}
+		h.log.Error("failed to fetch tv series", "error", err, "id", id, "path", r.URL.Path)
 		response.Error(w, http.StatusInternalServerError, "failed to fetch tv series")
 		return
 	}
@@ -241,7 +246,7 @@ func (h *Handler) GetByID(w http.ResponseWriter, r *http.Request) {
 //	@Produce		json
 //	@Security		BearerAuth
 //	@Param			page					query		int		false	"Page number (default 1)"
-//	@Param			sort_by					query		string	false	"popularity.desc | first_air_date.desc | vote_average.desc | name.asc | max_watched_ep.desc | max_watched_ep.asc | ..."
+//	@Param			sort_by					query		string	false	"popularity.desc | first_air_date.desc | vote_average.desc | name.asc | max_watched_ep.desc | watchlisted_at.desc | watched_at.desc | ..."
 //	@Param			with_genres				query		string	false	"Comma-separated genre IDs (AND logic)"
 //	@Param			without_genres			query		string	false	"Comma-separated genre IDs to exclude"
 //	@Param			first_air_date_year		query		int		false	"Filter by first air date year"
@@ -277,6 +282,7 @@ func (h *Handler) Discover(w http.ResponseWriter, r *http.Request) {
 
 	results, total, err := h.service.Discover(r.Context(), userID, q)
 	if err != nil {
+		h.log.Error("failed to discover tv series", "error", err, "user", userID, "path", r.URL.Path)
 		response.Error(w, http.StatusInternalServerError, "failed to discover tv series")
 		return
 	}
@@ -312,6 +318,7 @@ func (h *Handler) GetStates(w http.ResponseWriter, r *http.Request) {
 
 	states, err := h.service.GetStates(r.Context(), userID)
 	if err != nil {
+		h.log.Error("failed to fetch tv states", "error", err, "user", userID, "path", r.URL.Path)
 		response.Error(w, http.StatusInternalServerError, "failed to fetch tv states")
 		return
 	}

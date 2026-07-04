@@ -2,6 +2,7 @@
 package router
 
 import (
+	"log/slog"
 	"net/http"
 
 	firebase "firebase.google.com/go/v4"
@@ -32,6 +33,7 @@ type Deps struct {
 	Firebase       *firebase.App
 	TMDB           *tmdb.Client
 	TVMaze         *tvmaze.Client
+	Logger         *slog.Logger
 }
 
 // New constructs the application handler with all feature routes registered under /api.
@@ -60,9 +62,9 @@ func New(deps Deps) http.Handler {
 	movieRepo := movie.NewRepository(deps.DB)
 	tvRepo := tv.NewRepository(deps.DB)
 
-	movie.NewHandler(movie.NewService(movieRepo, deps.TMDB, deps.Cache)).RegisterRoutes(mux, auth)
-	tv.NewHandler(tv.NewService(tvRepo, deps.TMDB, deps.Cache)).RegisterRoutes(mux, auth)
-	notification.NewHandler(notification.NewService(notification.NewRepository(deps.DB), deps.Firebase)).RegisterRoutes(mux, auth)
+	movie.NewHandler(movie.NewService(movieRepo, deps.TMDB, deps.Cache), deps.Logger).RegisterRoutes(mux, auth)
+	tv.NewHandler(tv.NewService(tvRepo, deps.TMDB, deps.Cache), deps.Logger).RegisterRoutes(mux, auth)
+	notification.NewHandler(notification.NewService(notification.NewRepository(deps.DB), deps.Firebase), deps.Logger).RegisterRoutes(mux, auth)
 
 	datasync.NewHandler(datasync.NewService(
 		datasync.NewRepository(deps.DB),
@@ -70,13 +72,15 @@ func New(deps Deps) http.Handler {
 		tv.NewSyncService(tvRepo, deps.TMDB),
 		deps.TMDB,
 		deps.TVMaze,
-	)).RegisterRoutes(mux, auth)
+	), deps.Logger).RegisterRoutes(mux, auth)
 
 	// Mount the inner mux under /api/. StripPrefix removes /api before the inner
 	// mux sees the path, so features register routes without the base prefix.
 	outer := http.NewServeMux()
 	outer.Handle("/api/", http.StripPrefix("/api", mux))
-	return outer
+
+	// Recover wraps every route: panic safety net + 5xx access logging.
+	return middleware.Recover(deps.Logger)(outer)
 }
 
 func root(w http.ResponseWriter, r *http.Request) {

@@ -11,6 +11,7 @@ import (
 	"github.com/peera/movizius-go-service/pkg/config"
 	"github.com/peera/movizius-go-service/pkg/database"
 	pkgfirebase "github.com/peera/movizius-go-service/pkg/firebase"
+	"github.com/peera/movizius-go-service/pkg/logger"
 	"github.com/peera/movizius-go-service/pkg/tmdb"
 	"github.com/peera/movizius-go-service/pkg/tvmaze"
 )
@@ -48,6 +49,7 @@ func init() {
 		Firebase:       firebaseApp,
 		TMDB:           tmdb.New(cfg.TMDBAccessToken),
 		TVMaze:         tvmaze.New(""),
+		Logger:         logger.New(),
 	})
 }
 

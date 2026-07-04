@@ -81,6 +81,7 @@ func main() {
 		Firebase:       firebaseApp,
 		TMDB:           tmdb.New(cfg.TMDBAccessToken),
 		TVMaze:         tvmaze.New(""),
+		Logger:         log,
 	})); err != nil {
 		log.Error("server stopped", "error", err)
 		os.Exit(1)

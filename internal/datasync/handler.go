@@ -2,6 +2,7 @@ package datasync
 
 import (
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"strconv"
 
@@ -17,11 +18,12 @@ const defaultLimit = 20
 // Handler handles HTTP requests for sync operations.
 type Handler struct {
 	service *SyncService
+	log     *slog.Logger
 }
 
 // NewHandler constructs a Handler.
-func NewHandler(service *SyncService) *Handler {
-	return &Handler{service: service}
+func NewHandler(service *SyncService, log *slog.Logger) *Handler {
+	return &Handler{service: service, log: log}
 }
 
 // RegisterRoutes registers sync endpoints on the provided mux.
@@ -48,6 +50,7 @@ func (h *Handler) SyncMovieByIDs(w http.ResponseWriter, r *http.Request) {
 	}
 	result, err := h.service.SyncByIDs(r.Context(), "movie", req.IDs)
 	if err != nil {
+		h.log.Error("sync operation failed", "error", err, "path", r.URL.Path)
 		response.Error(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -63,6 +66,7 @@ func (h *Handler) SyncTVByIDs(w http.ResponseWriter, r *http.Request) {
 	}
 	result, err := h.service.SyncByIDs(r.Context(), "tv", req.IDs)
 	if err != nil {
+		h.log.Error("sync operation failed", "error", err, "path", r.URL.Path)
 		response.Error(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -73,6 +77,7 @@ func (h *Handler) SyncTVByIDs(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) SyncMovieUserTracked(w http.ResponseWriter, r *http.Request) {
 	result, err := h.service.SyncFromUserTracked(r.Context(), "sync_movie_user_tracked", "movie", parseFrequency(r), parseLimit(r))
 	if err != nil {
+		h.log.Error("sync operation failed", "error", err, "path", r.URL.Path)
 		response.Error(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -83,6 +88,7 @@ func (h *Handler) SyncMovieUserTracked(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) SyncTVUserTracked(w http.ResponseWriter, r *http.Request) {
 	result, err := h.service.SyncFromUserTracked(r.Context(), "sync_tv_user_tracked", "tv", parseFrequency(r), parseLimit(r))
 	if err != nil {
+		h.log.Error("sync operation failed", "error", err, "path", r.URL.Path)
 		response.Error(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -97,6 +103,7 @@ func (h *Handler) SyncTrendingMovie(w http.ResponseWriter, r *http.Request) {
 	}
 	result, err := h.service.SyncFromTMDBTrending(r.Context(), "sync_movie_trending", "movie", timeWindow, parseFrequency(r), parseLimit(r))
 	if err != nil {
+		h.log.Error("sync operation failed", "error", err, "path", r.URL.Path)
 		response.Error(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -111,6 +118,7 @@ func (h *Handler) SyncTrendingTV(w http.ResponseWriter, r *http.Request) {
 	}
 	result, err := h.service.SyncFromTMDBTrending(r.Context(), "sync_trending_tv", "tv", timeWindow, parseFrequency(r), parseLimit(r))
 	if err != nil {
+		h.log.Error("sync operation failed", "error", err, "path", r.URL.Path)
 		response.Error(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -121,6 +129,7 @@ func (h *Handler) SyncTrendingTV(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) SyncChangesMovie(w http.ResponseWriter, r *http.Request) {
 	result, err := h.service.SyncFromTMDBChanges(r.Context(), "sync_movie_changes", "movie", parseFrequency(r), parseLimit(r))
 	if err != nil {
+		h.log.Error("sync operation failed", "error", err, "path", r.URL.Path)
 		response.Error(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -131,6 +140,7 @@ func (h *Handler) SyncChangesMovie(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) SyncChangesTV(w http.ResponseWriter, r *http.Request) {
 	result, err := h.service.SyncFromTMDBChanges(r.Context(), "sync_tv_changes", "tv", parseFrequency(r), parseLimit(r))
 	if err != nil {
+		h.log.Error("sync operation failed", "error", err, "path", r.URL.Path)
 		response.Error(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -141,6 +151,7 @@ func (h *Handler) SyncChangesTV(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) SyncTVMazeSchedule(w http.ResponseWriter, r *http.Request) {
 	result, err := h.service.SyncTVMazeSchedule(r.Context())
 	if err != nil {
+		h.log.Error("sync operation failed", "error", err, "path", r.URL.Path)
 		response.Error(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -151,6 +162,7 @@ func (h *Handler) SyncTVMazeSchedule(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) CleanupMovieFields(w http.ResponseWriter, r *http.Request) {
 	modified, err := h.service.CleanupMovieFields(r.Context())
 	if err != nil {
+		h.log.Error("sync operation failed", "error", err, "path", r.URL.Path)
 		response.Error(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -161,6 +173,7 @@ func (h *Handler) CleanupMovieFields(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) CleanupTVFields(w http.ResponseWriter, r *http.Request) {
 	modified, err := h.service.CleanupTVFields(r.Context())
 	if err != nil {
+		h.log.Error("sync operation failed", "error", err, "path", r.URL.Path)
 		response.Error(w, http.StatusInternalServerError, err.Error())
 		return
 	}

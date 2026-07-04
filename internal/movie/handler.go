@@ -3,6 +3,7 @@ package movie
 import (
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
@@ -15,11 +16,12 @@ import (
 // Handler exposes movie endpoints over HTTP.
 type Handler struct {
 	service *MovieService
+	log     *slog.Logger
 }
 
 // NewHandler constructs a movie Handler.
-func NewHandler(service *MovieService) *Handler {
-	return &Handler{service: service}
+func NewHandler(service *MovieService, log *slog.Logger) *Handler {
+	return &Handler{service: service, log: log}
 }
 
 // RegisterRoutes binds movie routes onto the given mux.
@@ -67,6 +69,7 @@ func (h *Handler) Search(w http.ResponseWriter, r *http.Request) {
 
 	result, err := h.service.Search(r.Context(), q, page)
 	if err != nil {
+		h.log.Error("failed to search movies", "error", err, "query", q, "path", r.URL.Path)
 		response.Error(w, http.StatusInternalServerError, "failed to search movies")
 		return
 	}
@@ -129,6 +132,7 @@ func (h *Handler) GetStates(w http.ResponseWriter, r *http.Request) {
 
 	states, err := h.service.GetStates(r.Context(), userID)
 	if err != nil {
+		h.log.Error("failed to fetch movie states", "error", err, "user", userID, "path", r.URL.Path)
 		response.Error(w, http.StatusInternalServerError, "failed to fetch movie states")
 		return
 	}
@@ -170,6 +174,7 @@ func (h *Handler) Random(w http.ResponseWriter, r *http.Request) {
 
 	results, err := h.service.Random(r.Context(), userID, total, withoutStatus)
 	if err != nil {
+		h.log.Error("failed to get random movies", "error", err, "user", userID, "path", r.URL.Path)
 		response.Error(w, http.StatusInternalServerError, "failed to get random movies")
 		return
 	}
@@ -215,6 +220,7 @@ func (h *Handler) GetByID(w http.ResponseWriter, r *http.Request) {
 			response.Error(w, http.StatusNotFound, "movie not found")
 			return
 		}
+		h.log.Error("failed to fetch movie", "error", err, "id", id, "path", r.URL.Path)
 		response.Error(w, http.StatusInternalServerError, "failed to fetch movie")
 		return
 	}
@@ -261,6 +267,7 @@ func (h *Handler) Discover(w http.ResponseWriter, r *http.Request) {
 
 	results, total, err := h.service.Discover(r.Context(), userID, q)
 	if err != nil {
+		h.log.Error("failed to discover movies", "error", err, "user", userID, "path", r.URL.Path)
 		response.Error(w, http.StatusInternalServerError, "failed to discover movies")
 		return
 	}

@@ -391,6 +391,15 @@ func (r *mongoTVRepository) RandomIDs(ctx context.Context, userID string, upcomi
 	return ids, nil
 }
 
+// tvSortByUserField reports whether sortBy references a per-user field that
+// requires joining tv_user (watch progress, watchlist/watched timestamps).
+func tvSortByUserField(sortBy string) bool {
+	s := strings.ToLower(sortBy)
+	return strings.HasPrefix(s, "max_watched_ep") ||
+		strings.HasPrefix(s, "watchlisted_at") ||
+		strings.HasPrefix(s, "watched_at")
+}
+
 // buildDiscoverPipeline runs on the tv collection (no account_status filter).
 // When sort_by=max_watched_ep.* it still needs a user join, but as a left join
 // so all shows are retained (un-watched shows get _max_watched_at=null).
@@ -401,8 +410,7 @@ func buildDiscoverPipeline(userID string, q DiscoverQuery) bson.A {
 	pipeline := bson.A{}
 	pipeline = append(pipeline, bson.D{{Key: "$match", Value: tvMatchConditions(q)}})
 
-	sortByProgress := strings.HasPrefix(strings.ToLower(q.SortBy), "max_watched_ep")
-	if sortByProgress && userID != "" {
+	if tvSortByUserField(q.SortBy) && userID != "" {
 		pipeline = append(pipeline, bson.D{{Key: "$lookup", Value: bson.D{
 			{Key: "from", Value: "tv_user"},
 			{Key: "localField", Value: "id"},
@@ -420,6 +428,8 @@ func buildDiscoverPipeline(userID string, q DiscoverQuery) bson.A {
 			{Key: "_max_watched_at", Value: bson.D{{Key: "$max", Value: bson.D{
 				{Key: "$ifNull", Value: bson.A{"$_user.episode_watched.watched_at", bson.A{}}},
 			}}}},
+			{Key: "watchlisted_at", Value: "$_user.watchlisted_at"},
+			{Key: "watched_at", Value: "$_user.watched_at"},
 		}}})
 	}
 
@@ -501,6 +511,8 @@ func buildAccountStatusPipeline(userID string, q DiscoverQuery) bson.A {
 					{Key: "_max_watched_at", Value: "$_max_watched_at"},
 					{Key: "_count_watched", Value: "$_count_watched"},
 					{Key: "_max_ep", Value: "$_max_ep"},
+					{Key: "watchlisted_at", Value: "$watchlisted_at"},
+					{Key: "watched_at", Value: "$watched_at"},
 				},
 			}}}},
 		}}},
@@ -716,6 +728,14 @@ func tvSortStage(sortBy string) bson.D {
 		return bson.D{{Key: "_max_watched_at", Value: -1}}
 	case "max_watched_ep.asc":
 		return bson.D{{Key: "_max_watched_at", Value: 1}}
+	case "watchlisted_at.desc":
+		return bson.D{{Key: "watchlisted_at", Value: -1}}
+	case "watchlisted_at.asc":
+		return bson.D{{Key: "watchlisted_at", Value: 1}}
+	case "watched_at.desc":
+		return bson.D{{Key: "watched_at", Value: -1}}
+	case "watched_at.asc":
+		return bson.D{{Key: "watched_at", Value: 1}}
 	default: // popularity.desc
 		return bson.D{{Key: "popularity", Value: -1}}
 	}
