@@ -118,7 +118,7 @@ const reconcileDeleteBatch = 1000
 // is skipped (popularity updates are still applied) to guard against a partial
 // or corrupt download. No documents are ever inserted.
 func (r *mongoMovieRepository) ReconcilePopularity(ctx context.Context, export map[int64]float64, maxDeleteRatio float64) (ReconcileResult, error) {
-	var res ReconcileResult
+	res := ReconcileResult{ExistingIDs: make(map[int64]struct{})}
 
 	projection := bson.M{"_id": 0, "id": 1, "popularity": 1}
 	cursor, err := r.db.Collection("movie").Find(ctx, bson.M{}, options.Find().SetProjection(projection))
@@ -152,6 +152,7 @@ func (r *mongoMovieRepository) ReconcilePopularity(ctx context.Context, export m
 			return res, fmt.Errorf("movie: reconcile decode: %w", err)
 		}
 		res.Scanned++
+		res.ExistingIDs[doc.ID] = struct{}{}
 
 		pop, ok := export[doc.ID]
 		if !ok {

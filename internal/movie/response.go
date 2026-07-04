@@ -198,8 +198,9 @@ type Flatrate struct {
 
 // ReconcileResult reports the outcome of ReconcilePopularity.
 type ReconcileResult struct {
-	Scanned       int64 // movie docs examined
-	Updated       int64 // popularity values changed
-	Deleted       int64 // movie docs removed (cascaded to movie_user)
-	SkippedDelete bool  // true when the safety guard aborted the delete phase
+	Scanned       int64              // movie docs examined
+	Updated       int64              // popularity values changed
+	Deleted       int64              // movie docs removed (cascaded to movie_user)
+	SkippedDelete bool               // true when the safety guard aborted the delete phase
+	ExistingIDs   map[int64]struct{} // every id present in the collection (pre-delete)
 }
