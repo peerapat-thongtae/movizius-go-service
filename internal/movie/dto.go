@@ -6,6 +6,14 @@ import (
 	"strings"
 )
 
+// ReconcileResult reports the outcome of ReconcilePopularity.
+type ReconcileResult struct {
+	Scanned       int64 // movie docs examined
+	Updated       int64 // popularity values changed
+	Deleted       int64 // movie docs removed (cascaded to movie_user)
+	SkippedDelete bool  // true when the safety guard aborted the delete phase
+}
+
 // DiscoverQuery holds parsed query params for the movie discover endpoint.
 type DiscoverQuery struct {
 	Page                 int
@@ -21,8 +29,8 @@ type DiscoverQuery struct {
 	WithOriginalLanguage string
 	IncludeAdult         bool
 	Softcore             *bool
-	WithWatchProviders    []int64
-	WatchRegion           string
+	WithWatchProviders   []int64
+	WatchRegion          string
 	WithAccountStatus    []string
 	WithoutAccountStatus []string
 }
@@ -50,8 +58,8 @@ func discoverQueryFromRequest(r *http.Request) DiscoverQuery {
 		VoteCountGte:         int64Param(q.Get("vote_count.gte"), 0),
 		WithOriginalLanguage: q.Get("with_original_language"),
 		IncludeAdult:         q.Get("include_adult") == "true",
-		WithWatchProviders:    int64ListParam(q.Get("with_watch_providers")),
-		WatchRegion:           strings.ToUpper(q.Get("watch_region")),
+		WithWatchProviders:   int64ListParam(q.Get("with_watch_providers")),
+		WatchRegion:          strings.ToUpper(q.Get("watch_region")),
 		WithAccountStatus:    stringListParam(q.Get("with_account_status")),
 		WithoutAccountStatus: stringListParam(q.Get("without_account_status")),
 	}

@@ -22,6 +22,7 @@ type MovieRepository interface {
 	UpsertState(ctx context.Context, userID string, req UpsertStateRequest) error
 	UpsertDetail(ctx context.Context, data MovieResponse) error
 	DeleteByTMDBID(ctx context.Context, id int64) error
+	ReconcilePopularity(ctx context.Context, export map[int64]float64, maxDeleteRatio float64) (ReconcileResult, error)
 }
 
 type mongoMovieRepository struct {
@@ -101,6 +102,106 @@ func (r *mongoMovieRepository) DeleteByTMDBID(ctx context.Context, id int64) err
 		return fmt.Errorf("movie: delete movie_user %d: %w", id, err)
 	}
 	return nil
+}
+
+// reconcileUpdateBatch is the number of popularity updates flushed per BulkWrite.
+const reconcileUpdateBatch = 1000
+
+// reconcileDeleteBatch is the number of ids deleted per DeleteMany call.
+const reconcileDeleteBatch = 1000
+
+// ReconcilePopularity walks the movie collection against the TMDB daily export.
+// For movies present in the export it updates popularity when it differs; movies
+// absent from the export are deleted (cascading to movie_user, mirroring
+// DeleteByTMDBID). If the delete set is implausibly large — more than
+// maxDeleteRatio of the scanned docs, or the export is empty — the delete phase
+// is skipped (popularity updates are still applied) to guard against a partial
+// or corrupt download. No documents are ever inserted.
+func (r *mongoMovieRepository) ReconcilePopularity(ctx context.Context, export map[int64]float64, maxDeleteRatio float64) (ReconcileResult, error) {
+	var res ReconcileResult
+
+	projection := bson.M{"_id": 0, "id": 1, "popularity": 1}
+	cursor, err := r.db.Collection("movie").Find(ctx, bson.M{}, options.Find().SetProjection(projection))
+	if err != nil {
+		return res, fmt.Errorf("movie: reconcile find: %w", err)
+	}
+	defer cursor.Close(ctx)
+
+	updates := make([]mongo.WriteModel, 0, reconcileUpdateBatch)
+	var toDelete []int64
+
+	flushUpdates := func() error {
+		if len(updates) == 0 {
+			return nil
+		}
+		out, err := r.db.Collection("movie").BulkWrite(ctx, updates, options.BulkWrite().SetOrdered(false))
+		if err != nil {
+			return fmt.Errorf("movie: reconcile bulk update: %w", err)
+		}
+		res.Updated += out.ModifiedCount
+		updates = updates[:0]
+		return nil
+	}
+
+	for cursor.Next(ctx) {
+		var doc struct {
+			ID         int64    `bson:"id"`
+			Popularity *float64 `bson:"popularity"`
+		}
+		if err := cursor.Decode(&doc); err != nil {
+			return res, fmt.Errorf("movie: reconcile decode: %w", err)
+		}
+		res.Scanned++
+
+		pop, ok := export[doc.ID]
+		if !ok {
+			toDelete = append(toDelete, doc.ID)
+			continue
+		}
+		if doc.Popularity == nil || *doc.Popularity != pop {
+			updates = append(updates, mongo.NewUpdateOneModel().
+				SetFilter(bson.M{"id": doc.ID}).
+				SetUpdate(bson.M{"$set": bson.M{"popularity": pop}}))
+			if len(updates) >= reconcileUpdateBatch {
+				if err := flushUpdates(); err != nil {
+					return res, err
+				}
+			}
+		}
+	}
+	if err := cursor.Err(); err != nil {
+		return res, fmt.Errorf("movie: reconcile cursor: %w", err)
+	}
+	if err := flushUpdates(); err != nil {
+		return res, err
+	}
+
+	// Safety guard: bail out of deletes on a suspiciously large removal set or an
+	// empty export (both signal a bad download), but keep the popularity updates.
+	if len(export) == 0 || float64(len(toDelete)) > maxDeleteRatio*float64(res.Scanned) {
+		res.SkippedDelete = true
+		return res, nil
+	}
+
+	for start := 0; start < len(toDelete); start += reconcileDeleteBatch {
+		end := start + reconcileDeleteBatch
+		if end > len(toDelete) {
+			end = len(toDelete)
+		}
+		batch := toDelete[start:end]
+		filter := bson.M{"id": bson.M{"$in": batch}}
+
+		out, err := r.db.Collection("movie").DeleteMany(ctx, filter)
+		if err != nil {
+			return res, fmt.Errorf("movie: reconcile delete movie: %w", err)
+		}
+		res.Deleted += out.DeletedCount
+		if _, err := r.db.Collection("movie_user").DeleteMany(ctx, filter); err != nil {
+			return res, fmt.Errorf("movie: reconcile delete movie_user: %w", err)
+		}
+	}
+
+	return res, nil
 }
 
 func (r *mongoMovieRepository) UpsertDetail(ctx context.Context, data MovieResponse) error {
