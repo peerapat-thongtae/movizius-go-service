@@ -53,7 +53,11 @@ func fetchIDPopularity(ctx context.Context, kind string, date time.Time) (map[in
 }
 
 func fetchIDPopularityFor(ctx context.Context, kind string, date time.Time) (map[int64]float64, error) {
-	url := fmt.Sprintf(idExportURLFmt, kind, date.Format(exportDateLayout))
+	kindPath := kind
+	if kind == "tv" {
+		kindPath = "tv_series"
+	}
+	url := fmt.Sprintf(idExportURLFmt, kindPath, date.Format(exportDateLayout))
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
