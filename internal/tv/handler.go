@@ -33,6 +33,7 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux, auth func(http.Handler) htt
 	mux.Handle("GET /tv/discover", auth(http.HandlerFunc(h.Discover)))
 	mux.Handle("GET /tv/search", auth(http.HandlerFunc(h.Search)))
 	mux.Handle("GET /tv/random", auth(http.HandlerFunc(h.Random)))
+	mux.Handle("GET /tv/trending", auth(http.HandlerFunc(h.Trending)))
 	mux.Handle("GET /tv/{id}", auth(http.HandlerFunc(h.GetByID)))
 }
 
@@ -194,6 +195,51 @@ func (h *Handler) Random(w http.ResponseWriter, r *http.Request) {
 		TotalPages:   1,
 		Results:      results,
 	})
+}
+
+// Trending returns TMDB's trending TV series for a time window, filtered to acceptable titles.
+//
+//	@Summary		Trending TV series
+//	@Description	Returns TMDB's trending TV series for the given time window. Results are filtered through the same acceptability rules used at sync time (no adult content, unwanted genres, unsupported languages, or non-scripted types).
+//	@Tags			tv
+//	@Produce		json
+//	@Security		BearerAuth
+//	@Param			time_window	query		string	false	"day | week (default day)"
+//	@Param			page		query		int		false	"Page number (default 1)"
+//	@Success		200			{object}	response.Page[tv.TVResponse]
+//	@Failure		400			{object}	map[string]string
+//	@Failure		401			{object}	map[string]string
+//	@Failure		500			{object}	map[string]string
+//	@Router			/tv/trending [get]
+func (h *Handler) Trending(w http.ResponseWriter, r *http.Request) {
+	_, ok := middleware.UserIDFromContext(r.Context())
+	if !ok {
+		response.Error(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
+	timeWindow := r.URL.Query().Get("time_window")
+	if timeWindow == "" {
+		timeWindow = "day"
+	}
+	if timeWindow != "day" && timeWindow != "week" {
+		response.Error(w, http.StatusBadRequest, "time_window must be day or week")
+		return
+	}
+
+	page := intParam(r.URL.Query().Get("page"), 1)
+	if page < 1 {
+		page = 1
+	}
+
+	result, err := h.service.Trending(r.Context(), timeWindow, page)
+	if err != nil {
+		h.log.Error("failed to fetch trending tv series", "error", err, "path", r.URL.Path)
+		response.Error(w, http.StatusInternalServerError, "failed to fetch trending tv series")
+		return
+	}
+
+	response.Success(w, http.StatusOK, result)
 }
 
 // GetByID returns full TMDB detail for a single TV series.

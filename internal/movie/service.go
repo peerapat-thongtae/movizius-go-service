@@ -294,6 +294,81 @@ func (s *MovieService) Search(ctx context.Context, query string, page int) (*res
 	}, nil
 }
 
+// Trending returns TMDB's trending movies for the given time window, enriched with full
+// detail and filtered through isAcceptableMovie. Cached DB records win over TMDB detail
+// for the fields the DB is the source of truth for (see overlayDBFields).
+func (s *MovieService) Trending(ctx context.Context, timeWindow string, page int) (*response.Page[MovieResponse], error) {
+	trendingPage, err := s.tmdb.GetTrending(ctx, "movie", timeWindow, page)
+	if err != nil {
+		return nil, fmt.Errorf("movie service: trending tmdb: %w", err)
+	}
+
+	if len(trendingPage.Results) == 0 {
+		return &response.Page[MovieResponse]{
+			Page:         trendingPage.Page,
+			TotalPages:   trendingPage.TotalPages,
+			TotalResults: trendingPage.TotalResults,
+			Results:      []MovieResponse{},
+		}, nil
+	}
+
+	ids := make([]int64, len(trendingPage.Results))
+	for i, r := range trendingPage.Results {
+		ids[i] = r.ID
+	}
+
+	details := make([]MovieResponse, len(ids))
+	errs := make([]error, len(ids))
+	var wg sync.WaitGroup
+	for i, id := range ids {
+		wg.Add(1)
+		go func(idx int, movieID int64) {
+			defer wg.Done()
+			var detail MovieResponse
+			if err := s.tmdb.GetMovieDetail(ctx, movieID, appendToResponse, &detail); err != nil {
+				errs[idx] = fmt.Errorf("tmdb detail for id %d: %w", movieID, err)
+				return
+			}
+			detail.MediaType = "movie"
+			if detail.ImdbID == "" && detail.ExternalIDs != nil {
+				detail.ImdbID = detail.ExternalIDs.ImdbID
+			}
+			detail.ReleaseDateTH = extractReleaseDateTH(detail)
+			details[idx] = detail
+		}(i, id)
+	}
+	wg.Wait()
+
+	for _, err := range errs {
+		if err != nil {
+			return nil, fmt.Errorf("movie service: trending enrich from tmdb: %w", err)
+		}
+	}
+
+	cached, err := s.repo.FindByTMDBIDs(ctx, ids)
+	if err != nil {
+		return nil, fmt.Errorf("movie service: fetch cached movies: %w", err)
+	}
+
+	results := make([]MovieResponse, 0, len(details))
+	for _, detail := range details {
+		if db, ok := cached[detail.ID]; ok {
+			overlayDBFields(&detail, db)
+		}
+		if !isAcceptableMovie(detail) {
+			continue
+		}
+		results = append(results, detail)
+	}
+
+	return &response.Page[MovieResponse]{
+		Page:         trendingPage.Page,
+		TotalPages:   trendingPage.TotalPages,
+		TotalResults: trendingPage.TotalResults,
+		Results:      results,
+	}, nil
+}
+
 // GetByID returns detail for a single movie. When the movie is cached in the DB,
 // the DB record is the source of truth for the fields it stores (popularity,
 // votes, release dates, status, runtime, title, poster, language) and TMDB

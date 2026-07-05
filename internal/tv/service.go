@@ -301,6 +301,88 @@ func (s *TVService) Search(ctx context.Context, query string, page int) (*respon
 	}, nil
 }
 
+// Trending returns TMDB's trending TV series for the given time window, enriched with
+// full detail and filtered through isAcceptableTV. Cached DB records win over TMDB
+// detail for the fields the DB is the source of truth for (see overlayDBFields).
+func (s *TVService) Trending(ctx context.Context, timeWindow string, page int) (*response.Page[TVResponse], error) {
+	trendingPage, err := s.tmdb.GetTrending(ctx, "tv", timeWindow, page)
+	if err != nil {
+		return nil, fmt.Errorf("tv service: trending tmdb: %w", err)
+	}
+
+	if len(trendingPage.Results) == 0 {
+		return &response.Page[TVResponse]{
+			Page:         trendingPage.Page,
+			TotalPages:   trendingPage.TotalPages,
+			TotalResults: trendingPage.TotalResults,
+			Results:      []TVResponse{},
+		}, nil
+	}
+
+	ids := make([]int64, len(trendingPage.Results))
+	for i, r := range trendingPage.Results {
+		ids[i] = r.ID
+	}
+
+	details := make([]TVResponse, len(ids))
+	errs := make([]error, len(ids))
+	var wg sync.WaitGroup
+	for i, id := range ids {
+		wg.Add(1)
+		go func(idx int, tvID int64) {
+			defer wg.Done()
+			var detail TVResponse
+			if err := s.tmdb.GetTVDetail(ctx, tvID, appendToResponse, &detail); err != nil {
+				errs[idx] = fmt.Errorf("tmdb detail for id %d: %w", tvID, err)
+				return
+			}
+			detail.MediaType = "tv"
+			if detail.ImdbID == "" && detail.ExternalIDs != nil {
+				detail.ImdbID = detail.ExternalIDs.ImdbID
+			}
+			details[idx] = detail
+		}(i, id)
+	}
+	wg.Wait()
+
+	for _, err := range errs {
+		if err != nil {
+			return nil, fmt.Errorf("tv service: trending enrich from tmdb: %w", err)
+		}
+	}
+
+	cached, err := s.repo.FindByTMDBIDs(ctx, ids)
+	if err != nil {
+		return nil, fmt.Errorf("tv service: fetch cached tv: %w", err)
+	}
+
+	airDates, err := s.repo.GetNextEpisodeAirDatesByIDs(ctx, ids)
+	if err != nil {
+		return nil, fmt.Errorf("tv service: get air dates from db: %w", err)
+	}
+
+	results := make([]TVResponse, 0, len(details))
+	for _, detail := range details {
+		if db, ok := cached[detail.ID]; ok {
+			overlayDBFields(&detail, db)
+		}
+		if airDate, ok := airDates[detail.ID]; ok && detail.NextEpisodeToAir != nil {
+			detail.NextEpisodeToAir.AirDate = FlexAirDate(airDate)
+		}
+		if !isAcceptableTV(detail) {
+			continue
+		}
+		results = append(results, detail)
+	}
+
+	return &response.Page[TVResponse]{
+		Page:         trendingPage.Page,
+		TotalPages:   trendingPage.TotalPages,
+		TotalResults: trendingPage.TotalResults,
+		Results:      results,
+	}, nil
+}
+
 // GetByID returns detail for a single TV series. When the series is cached in the
 // DB, the DB record is the source of truth for the fields it stores (popularity,
 // votes, air dates, status, type, season/episode counts, is_anime, name, poster,

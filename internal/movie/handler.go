@@ -32,6 +32,7 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux, auth func(http.Handler) htt
 	mux.Handle("GET /movie/discover", auth(http.HandlerFunc(h.Discover)))
 	mux.Handle("GET /movie/search", auth(http.HandlerFunc(h.Search)))
 	mux.Handle("GET /movie/random", auth(http.HandlerFunc(h.Random)))
+	mux.Handle("GET /movie/trending", auth(http.HandlerFunc(h.Trending)))
 	mux.Handle("GET /movie/{id}", auth(http.HandlerFunc(h.GetByID)))
 }
 
@@ -185,6 +186,51 @@ func (h *Handler) Random(w http.ResponseWriter, r *http.Request) {
 		TotalPages:   1,
 		Results:      results,
 	})
+}
+
+// Trending returns TMDB's trending movies for a time window, filtered to acceptable titles.
+//
+//	@Summary		Trending movies
+//	@Description	Returns TMDB's trending movies for the given time window. Results are filtered through the same acceptability rules used at sync time (no adult content, unwanted genres, unsupported languages, or cancelled/rumored titles).
+//	@Tags			movies
+//	@Produce		json
+//	@Security		BearerAuth
+//	@Param			time_window	query		string	false	"day | week (default day)"
+//	@Param			page		query		int		false	"Page number (default 1)"
+//	@Success		200			{object}	response.Page[movie.MovieResponse]
+//	@Failure		400			{object}	map[string]string
+//	@Failure		401			{object}	map[string]string
+//	@Failure		500			{object}	map[string]string
+//	@Router			/movie/trending [get]
+func (h *Handler) Trending(w http.ResponseWriter, r *http.Request) {
+	_, ok := middleware.UserIDFromContext(r.Context())
+	if !ok {
+		response.Error(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
+	timeWindow := r.URL.Query().Get("time_window")
+	if timeWindow == "" {
+		timeWindow = "day"
+	}
+	if timeWindow != "day" && timeWindow != "week" {
+		response.Error(w, http.StatusBadRequest, "time_window must be day or week")
+		return
+	}
+
+	page := intParam(r.URL.Query().Get("page"), 1)
+	if page < 1 {
+		page = 1
+	}
+
+	result, err := h.service.Trending(r.Context(), timeWindow, page)
+	if err != nil {
+		h.log.Error("failed to fetch trending movies", "error", err, "path", r.URL.Path)
+		response.Error(w, http.StatusInternalServerError, "failed to fetch trending movies")
+		return
+	}
+
+	response.Success(w, http.StatusOK, result)
 }
 
 // GetByID returns full TMDB detail for a single movie.

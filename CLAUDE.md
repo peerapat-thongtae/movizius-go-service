@@ -121,3 +121,6 @@ Auth0 owns login/registration/token issuance. The API only validates JWTs.
 
 ## Sync data from 3rd party Rules
 - Not update vote_average and vote_count because we use data from imdb.
+
+## Response of movie, tv rules
+- Use data from database as priority first. if not then use from tmdb.
