@@ -30,13 +30,13 @@ func NewService(repo SyncRepository, movieSync *movie.MovieSyncService, tvSync *
 }
 
 // SyncByIDs syncs TMDB metadata for the given list of IDs directly.
-func (s *SyncService) SyncByIDs(ctx context.Context, mediaType string, ids []int64) (*SyncResult, error) {
+func (s *SyncService) SyncByIDs(ctx context.Context, mediaType string, ids []int64, skipAcceptable bool) (*SyncResult, error) {
 	var err error
 	switch mediaType {
 	case "movie":
-		err = s.movieSync.Sync(ctx, ids)
+		err = s.movieSync.Sync(ctx, ids, skipAcceptable)
 	case "tv":
-		err = s.tvSync.Sync(ctx, ids)
+		err = s.tvSync.Sync(ctx, ids, skipAcceptable)
 	default:
 		return nil, fmt.Errorf("unsupported media type: %s", mediaType)
 	}
@@ -53,7 +53,7 @@ func (s *SyncService) SyncByIDs(ctx context.Context, mediaType string, ids []int
 
 // SyncFromUserTracked syncs TMDB metadata for IDs in movie_user or tv_user using offset paging.
 // Loads the existing job by syncKey; creates a new one if not found yet.
-func (s *SyncService) SyncFromUserTracked(ctx context.Context, syncKey, mediaType, frequency string, limit int) (*SyncResult, error) {
+func (s *SyncService) SyncFromUserTracked(ctx context.Context, syncKey, mediaType, frequency string, limit int, skipAcceptable bool) (*SyncResult, error) {
 	meta, err := s.repo.GetSyncMeta(ctx, syncKey)
 	if err != nil && !isNotFound(err) {
 		return nil, err
@@ -117,7 +117,7 @@ func (s *SyncService) SyncFromUserTracked(ctx context.Context, syncKey, mediaTyp
 		return nil, err
 	}
 
-	if err := s.syncChunk(ctx, mediaType, chunk); err != nil {
+	if err := s.syncChunk(ctx, mediaType, chunk, skipAcceptable); err != nil {
 		return nil, err
 	}
 
@@ -152,7 +152,7 @@ func (s *SyncService) SyncFromUserTracked(ctx context.Context, syncKey, mediaTyp
 // SyncFromTMDBTrending syncs TMDB trending items page by page.
 // limit controls how many TMDB pages to fetch per call (default 1 = ~20 items).
 // timeWindow is "day" or "week".
-func (s *SyncService) SyncFromTMDBTrending(ctx context.Context, syncKey, mediaType, timeWindow, frequency string, limit int) (*SyncResult, error) {
+func (s *SyncService) SyncFromTMDBTrending(ctx context.Context, syncKey, mediaType, timeWindow, frequency string, limit int, skipAcceptable bool) (*SyncResult, error) {
 	m, err := s.repo.GetSyncMeta(ctx, syncKey)
 	if err != nil && !isNotFound(err) {
 		return nil, err
@@ -163,7 +163,7 @@ func (s *SyncService) SyncFromTMDBTrending(ctx context.Context, syncKey, mediaTy
 		if err != nil {
 			return nil, fmt.Errorf("datasync: trending page 1: %w", err)
 		}
-		if err := s.syncChunk(ctx, mediaType, extractIDs(page)); err != nil {
+		if err := s.syncChunk(ctx, mediaType, extractIDs(page), skipAcceptable); err != nil {
 			return nil, err
 		}
 
@@ -250,7 +250,7 @@ func (s *SyncService) SyncFromTMDBTrending(ctx context.Context, syncKey, mediaTy
 		if err != nil {
 			return nil, fmt.Errorf("datasync: trending page %d: %w", p, err)
 		}
-		if err := s.syncChunk(ctx, mediaType, extractIDs(page)); err != nil {
+		if err := s.syncChunk(ctx, mediaType, extractIDs(page), skipAcceptable); err != nil {
 			return nil, err
 		}
 	}
@@ -292,7 +292,7 @@ func (s *SyncService) SyncFromTMDBTrending(ctx context.Context, syncKey, mediaTy
 
 // SyncFromTMDBChanges syncs items TMDB reports as changed since yesterday, page by page.
 // limit controls how many TMDB pages to fetch per call (default 1 = ~100 items).
-func (s *SyncService) SyncFromTMDBChanges(ctx context.Context, syncKey, mediaType, frequency string, limit int) (*SyncResult, error) {
+func (s *SyncService) SyncFromTMDBChanges(ctx context.Context, syncKey, mediaType, frequency string, limit int, skipAcceptable bool) (*SyncResult, error) {
 	startDate := time.Now().UTC().AddDate(0, 0, -1).Format("2006-01-02")
 
 	m, err := s.repo.GetSyncMeta(ctx, syncKey)
@@ -305,7 +305,7 @@ func (s *SyncService) SyncFromTMDBChanges(ctx context.Context, syncKey, mediaTyp
 		if err != nil {
 			return nil, fmt.Errorf("datasync: changes page 1: %w", err)
 		}
-		if err := s.syncChunk(ctx, mediaType, extractChangeIDs(page)); err != nil {
+		if err := s.syncChunk(ctx, mediaType, extractChangeIDs(page), skipAcceptable); err != nil {
 			return nil, err
 		}
 
@@ -391,7 +391,7 @@ func (s *SyncService) SyncFromTMDBChanges(ctx context.Context, syncKey, mediaTyp
 		if err != nil {
 			return nil, fmt.Errorf("datasync: changes page %d: %w", p, err)
 		}
-		if err := s.syncChunk(ctx, mediaType, extractChangeIDs(page)); err != nil {
+		if err := s.syncChunk(ctx, mediaType, extractChangeIDs(page), skipAcceptable); err != nil {
 			return nil, err
 		}
 	}
@@ -471,12 +471,12 @@ func (s *SyncService) getIDsPage(ctx context.Context, mediaType string, offset, 
 	}
 }
 
-func (s *SyncService) syncChunk(ctx context.Context, mediaType string, ids []int64) error {
+func (s *SyncService) syncChunk(ctx context.Context, mediaType string, ids []int64, skipAcceptable bool) error {
 	switch mediaType {
 	case "movie":
-		return s.movieSync.Sync(ctx, ids)
+		return s.movieSync.Sync(ctx, ids, skipAcceptable)
 	case "tv":
-		return s.tvSync.Sync(ctx, ids)
+		return s.tvSync.Sync(ctx, ids, skipAcceptable)
 	default:
 		return fmt.Errorf("datasync: unknown media type %q", mediaType)
 	}

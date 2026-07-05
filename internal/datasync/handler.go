@@ -48,7 +48,7 @@ func (h *Handler) SyncMovieByIDs(w http.ResponseWriter, r *http.Request) {
 		response.Error(w, http.StatusBadRequest, "ids is required")
 		return
 	}
-	result, err := h.service.SyncByIDs(r.Context(), "movie", req.IDs)
+	result, err := h.service.SyncByIDs(r.Context(), "movie", req.IDs, parseSkipAcceptable(r))
 	if err != nil {
 		h.log.Error("sync operation failed", "error", err, "path", r.URL.Path)
 		response.Error(w, http.StatusInternalServerError, err.Error())
@@ -64,7 +64,7 @@ func (h *Handler) SyncTVByIDs(w http.ResponseWriter, r *http.Request) {
 		response.Error(w, http.StatusBadRequest, "ids is required")
 		return
 	}
-	result, err := h.service.SyncByIDs(r.Context(), "tv", req.IDs)
+	result, err := h.service.SyncByIDs(r.Context(), "tv", req.IDs, parseSkipAcceptable(r))
 	if err != nil {
 		h.log.Error("sync operation failed", "error", err, "path", r.URL.Path)
 		response.Error(w, http.StatusInternalServerError, err.Error())
@@ -75,7 +75,7 @@ func (h *Handler) SyncTVByIDs(w http.ResponseWriter, r *http.Request) {
 
 // SyncMovieUserTracked syncs TMDB metadata for movie IDs tracked in movie_user.
 func (h *Handler) SyncMovieUserTracked(w http.ResponseWriter, r *http.Request) {
-	result, err := h.service.SyncFromUserTracked(r.Context(), "sync_movie_user_tracked", "movie", parseFrequency(r), parseLimit(r))
+	result, err := h.service.SyncFromUserTracked(r.Context(), "sync_movie_user_tracked", "movie", parseFrequency(r), parseLimit(r), parseSkipAcceptable(r))
 	if err != nil {
 		h.log.Error("sync operation failed", "error", err, "path", r.URL.Path)
 		response.Error(w, http.StatusInternalServerError, err.Error())
@@ -86,7 +86,7 @@ func (h *Handler) SyncMovieUserTracked(w http.ResponseWriter, r *http.Request) {
 
 // SyncTVUserTracked syncs TMDB metadata for TV IDs tracked in tv_user.
 func (h *Handler) SyncTVUserTracked(w http.ResponseWriter, r *http.Request) {
-	result, err := h.service.SyncFromUserTracked(r.Context(), "sync_tv_user_tracked", "tv", parseFrequency(r), parseLimit(r))
+	result, err := h.service.SyncFromUserTracked(r.Context(), "sync_tv_user_tracked", "tv", parseFrequency(r), parseLimit(r), parseSkipAcceptable(r))
 	if err != nil {
 		h.log.Error("sync operation failed", "error", err, "path", r.URL.Path)
 		response.Error(w, http.StatusInternalServerError, err.Error())
@@ -101,7 +101,7 @@ func (h *Handler) SyncTrendingMovie(w http.ResponseWriter, r *http.Request) {
 	if timeWindow == "" {
 		timeWindow = "week"
 	}
-	result, err := h.service.SyncFromTMDBTrending(r.Context(), "sync_movie_trending", "movie", timeWindow, parseFrequency(r), parseLimit(r))
+	result, err := h.service.SyncFromTMDBTrending(r.Context(), "sync_movie_trending", "movie", timeWindow, parseFrequency(r), parseLimit(r), parseSkipAcceptable(r))
 	if err != nil {
 		h.log.Error("sync operation failed", "error", err, "path", r.URL.Path)
 		response.Error(w, http.StatusInternalServerError, err.Error())
@@ -116,7 +116,7 @@ func (h *Handler) SyncTrendingTV(w http.ResponseWriter, r *http.Request) {
 	if timeWindow == "" {
 		timeWindow = "week"
 	}
-	result, err := h.service.SyncFromTMDBTrending(r.Context(), "sync_trending_tv", "tv", timeWindow, parseFrequency(r), parseLimit(r))
+	result, err := h.service.SyncFromTMDBTrending(r.Context(), "sync_trending_tv", "tv", timeWindow, parseFrequency(r), parseLimit(r), parseSkipAcceptable(r))
 	if err != nil {
 		h.log.Error("sync operation failed", "error", err, "path", r.URL.Path)
 		response.Error(w, http.StatusInternalServerError, err.Error())
@@ -127,7 +127,7 @@ func (h *Handler) SyncTrendingTV(w http.ResponseWriter, r *http.Request) {
 
 // SyncChangesMovie syncs movie metadata from TMDB's changes feed (start_date = yesterday), one page at a time.
 func (h *Handler) SyncChangesMovie(w http.ResponseWriter, r *http.Request) {
-	result, err := h.service.SyncFromTMDBChanges(r.Context(), "sync_movie_changes", "movie", parseFrequency(r), parseLimit(r))
+	result, err := h.service.SyncFromTMDBChanges(r.Context(), "sync_movie_changes", "movie", parseFrequency(r), parseLimit(r), parseSkipAcceptable(r))
 	if err != nil {
 		h.log.Error("sync operation failed", "error", err, "path", r.URL.Path)
 		response.Error(w, http.StatusInternalServerError, err.Error())
@@ -138,7 +138,7 @@ func (h *Handler) SyncChangesMovie(w http.ResponseWriter, r *http.Request) {
 
 // SyncChangesTV syncs TV metadata from TMDB's changes feed (start_date = yesterday), one page at a time.
 func (h *Handler) SyncChangesTV(w http.ResponseWriter, r *http.Request) {
-	result, err := h.service.SyncFromTMDBChanges(r.Context(), "sync_tv_changes", "tv", parseFrequency(r), parseLimit(r))
+	result, err := h.service.SyncFromTMDBChanges(r.Context(), "sync_tv_changes", "tv", parseFrequency(r), parseLimit(r), parseSkipAcceptable(r))
 	if err != nil {
 		h.log.Error("sync operation failed", "error", err, "path", r.URL.Path)
 		response.Error(w, http.StatusInternalServerError, err.Error())
@@ -188,6 +188,13 @@ func parseFrequency(r *http.Request) string {
 	default:
 		return FrequencyWeekly
 	}
+}
+
+// parseSkipAcceptable reads the "skipAcceptable" query param (default false).
+// When true, the acceptability filter is bypassed during sync.
+func parseSkipAcceptable(r *http.Request) bool {
+	b, _ := strconv.ParseBool(r.URL.Query().Get("skipAcceptable"))
+	return b
 }
 
 func parseLimit(r *http.Request) int {

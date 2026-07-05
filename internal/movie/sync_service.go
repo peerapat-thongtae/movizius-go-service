@@ -21,7 +21,8 @@ func NewSyncService(repo MovieRepository, tmdb *tmdb.Client) *MovieSyncService {
 }
 
 // Sync fetches TMDB detail for each ID in parallel and upserts into the movie collection.
-func (s *MovieSyncService) Sync(ctx context.Context, ids []int64) error {
+// When skipAcceptable is true, the acceptability filter is bypassed.
+func (s *MovieSyncService) Sync(ctx context.Context, ids []int64, skipAcceptable bool) error {
 	if len(ids) == 0 {
 		return nil
 	}
@@ -45,7 +46,7 @@ func (s *MovieSyncService) Sync(ctx context.Context, ids []int64) error {
 			if detail.ImdbID == "" && detail.ExternalIDs != nil {
 				detail.ImdbID = detail.ExternalIDs.ImdbID
 			}
-			if !isAcceptableMovie(detail) {
+			if !skipAcceptable && !isAcceptableMovie(detail) {
 				return
 			}
 			if err := s.repo.UpsertDetail(ctx, detail); err != nil {

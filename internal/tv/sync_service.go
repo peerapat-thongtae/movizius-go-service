@@ -26,7 +26,8 @@ func (s *TVSyncService) UpdateNextEpisodeAirDates(ctx context.Context, updates [
 }
 
 // Sync fetches TMDB detail for each ID in parallel and upserts into the tv collection.
-func (s *TVSyncService) Sync(ctx context.Context, ids []int64) error {
+// When skipAcceptable is true, the acceptability filter is bypassed.
+func (s *TVSyncService) Sync(ctx context.Context, ids []int64, skipAcceptable bool) error {
 	if len(ids) == 0 {
 		return nil
 	}
@@ -50,7 +51,7 @@ func (s *TVSyncService) Sync(ctx context.Context, ids []int64) error {
 			if detail.ImdbID == "" && detail.ExternalIDs != nil {
 				detail.ImdbID = detail.ExternalIDs.ImdbID
 			}
-			if !isAcceptableTV(detail) {
+			if !skipAcceptable && !isAcceptableTV(detail) {
 				return
 			}
 			if err := s.repo.UpsertDetail(ctx, detail); err != nil {

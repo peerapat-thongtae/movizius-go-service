@@ -45,7 +45,7 @@ const (
 // fetches TMDB detail for each id, applies the acceptability filter, and upserts
 // (inserting brand-new ids).
 type syncer interface {
-	Sync(ctx context.Context, ids []int64) error
+	Sync(ctx context.Context, ids []int64, skipAcceptable bool) error
 }
 
 func main() {
@@ -150,7 +150,7 @@ func main() {
 		if end > len(candidates) {
 			end = len(candidates)
 		}
-		if err := svc.Sync(ctx, candidates[start:end]); err != nil {
+		if err := svc.Sync(ctx, candidates[start:end], false); err != nil {
 			log.Error("insert chunk failed", "media_type", mediaType, "error", err)
 			os.Exit(1)
 		}
