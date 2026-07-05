@@ -86,6 +86,13 @@ func (s *MovieService) Discover(ctx context.Context, userID string, q DiscoverQu
 		return []MovieResponse{}, total, nil
 	}
 
+	// Load cached DB records so they can override TMDB detail (DB is the source of
+	// truth for the fields it stores). Read-only during the fan-out below.
+	cached, err := s.repo.FindByTMDBIDs(ctx, ids)
+	if err != nil {
+		return nil, 0, fmt.Errorf("movie service: fetch cached movies: %w", err)
+	}
+
 	results := make([]MovieResponse, len(ids))
 	errs := make([]error, len(ids))
 
@@ -104,6 +111,9 @@ func (s *MovieService) Discover(ctx context.Context, userID string, q DiscoverQu
 				detail.ImdbID = detail.ExternalIDs.ImdbID
 			}
 			detail.ReleaseDateTH = extractReleaseDateTH(detail)
+			if db, ok := cached[movieID]; ok {
+				overlayDBFields(&detail, db)
+			}
 			results[idx] = detail
 		}(i, id)
 	}
@@ -284,8 +294,11 @@ func (s *MovieService) Search(ctx context.Context, query string, page int) (*res
 	}, nil
 }
 
-// GetByID returns full TMDB detail for a single movie, with vote_average/vote_count
-// overlaid from the DB cache (IMDB-sourced, see CLAUDE.md). Returns tmdb.ErrNotFound
+// GetByID returns detail for a single movie. When the movie is cached in the DB,
+// the DB record is the source of truth for the fields it stores (popularity,
+// votes, release dates, status, runtime, title, poster, language) and TMDB
+// supplies the rest (overview, cast, videos, genre names, watch providers).
+// Movies absent from the DB fall back entirely to TMDB. Returns tmdb.ErrNotFound
 // if TMDB has no such movie.
 func (s *MovieService) GetByID(ctx context.Context, id int64) (*MovieResponse, error) {
 	var detail MovieResponse
@@ -303,12 +316,7 @@ func (s *MovieService) GetByID(ctx context.Context, id int64) (*MovieResponse, e
 		return nil, fmt.Errorf("movie service: fetch cached movie: %w", err)
 	}
 	if db, ok := cached[id]; ok {
-		if db.VoteAverage != nil {
-			detail.VoteAverage = *db.VoteAverage
-		}
-		if db.VoteCount != nil {
-			detail.VoteCount = *db.VoteCount
-		}
+		overlayDBFields(&detail, db)
 	}
 	return &detail, nil
 }

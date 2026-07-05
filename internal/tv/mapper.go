@@ -50,3 +50,53 @@ func tvToModel(data TVResponse, now time.Time) TV {
 		UpdatedAt:           now,
 	}
 }
+
+// overlayDBFields lets the cached DB record win over the freshly-fetched TMDB
+// detail for the fields the DB is the source of truth for (popularity from the
+// daily export sync, vote_average/vote_count from IMDB, the is_anime flag, and
+// the stored catalog fields). Only non-empty DB values are applied. Lossy DB
+// fields stored as ID arrays (genres, production_companies, watch_providers) and
+// next_episode_to_air (handled separately with the DB air date) are left to their
+// existing sources. is_anime is always applied — the DB flag is authoritative.
+func overlayDBFields(detail *TVResponse, db TV) {
+	if db.VoteAverage != nil {
+		detail.VoteAverage = *db.VoteAverage
+	}
+	if db.VoteCount != nil {
+		detail.VoteCount = *db.VoteCount
+	}
+	if db.Popularity != nil {
+		detail.Popularity = *db.Popularity
+	}
+	if db.NumberOfSeasons != nil {
+		detail.NumberOfSeasons = *db.NumberOfSeasons
+	}
+	if db.NumberOfEpisodes != nil {
+		detail.NumberOfEpisodes = *db.NumberOfEpisodes
+	}
+	if db.Type != nil && *db.Type != "" {
+		detail.Type = *db.Type
+	}
+	if db.Status != "" {
+		detail.Status = db.Status
+	}
+	if db.FirstAirDate != "" {
+		detail.FirstAirDate = db.FirstAirDate
+	}
+	if db.LastAirDate != "" {
+		detail.LastAirDate = db.LastAirDate
+	}
+	if db.Name != "" {
+		detail.Name = db.Name
+	}
+	if db.OriginalName != "" {
+		detail.OriginalName = db.OriginalName
+	}
+	if db.PosterPath != "" {
+		detail.PosterPath = db.PosterPath
+	}
+	if db.OriginalLanguage != "" {
+		detail.OriginalLanguage = db.OriginalLanguage
+	}
+	detail.IsAnime = db.IsAnime
+}

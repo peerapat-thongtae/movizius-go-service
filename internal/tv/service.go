@@ -74,6 +74,13 @@ func (s *TVService) Discover(ctx context.Context, userID string, q DiscoverQuery
 		return []TVResponse{}, total, nil
 	}
 
+	// Load cached DB records so they can override TMDB detail (DB is the source of
+	// truth for the fields it stores). Read-only during the fan-out below.
+	cached, err := s.repo.FindByTMDBIDs(ctx, ids)
+	if err != nil {
+		return nil, 0, fmt.Errorf("tv service: fetch cached tv: %w", err)
+	}
+
 	results := make([]TVResponse, len(ids))
 	errs := make([]error, len(ids))
 
@@ -90,6 +97,9 @@ func (s *TVService) Discover(ctx context.Context, userID string, q DiscoverQuery
 			detail.MediaType = "tv"
 			if detail.ImdbID == "" && detail.ExternalIDs != nil {
 				detail.ImdbID = detail.ExternalIDs.ImdbID
+			}
+			if db, ok := cached[tvID]; ok {
+				overlayDBFields(&detail, db)
 			}
 			results[idx] = detail
 		}(i, id)
@@ -291,9 +301,12 @@ func (s *TVService) Search(ctx context.Context, query string, page int) (*respon
 	}, nil
 }
 
-// GetByID returns full TMDB detail for a single TV series, with vote_average/vote_count
-// and next_episode_to_air.air_date overlaid from the DB cache. Returns tmdb.ErrNotFound
-// if TMDB has no such series.
+// GetByID returns detail for a single TV series. When the series is cached in the
+// DB, the DB record is the source of truth for the fields it stores (popularity,
+// votes, air dates, status, type, season/episode counts, is_anime, name, poster,
+// language) plus next_episode_to_air.air_date; TMDB supplies the rest (overview,
+// credits, videos, genre names, watch providers). Series absent from the DB fall
+// back entirely to TMDB. Returns tmdb.ErrNotFound if TMDB has no such series.
 func (s *TVService) GetByID(ctx context.Context, id int64) (*TVResponse, error) {
 	var detail TVResponse
 	if err := s.tmdb.GetTVDetail(ctx, id, appendToResponse, &detail); err != nil {
@@ -309,12 +322,7 @@ func (s *TVService) GetByID(ctx context.Context, id int64) (*TVResponse, error) 
 		return nil, fmt.Errorf("tv service: fetch cached tv: %w", err)
 	}
 	if db, ok := cached[id]; ok {
-		if db.VoteAverage != nil {
-			detail.VoteAverage = *db.VoteAverage
-		}
-		if db.VoteCount != nil {
-			detail.VoteCount = *db.VoteCount
-		}
+		overlayDBFields(&detail, db)
 	}
 
 	airDates, err := s.repo.GetNextEpisodeAirDatesByIDs(ctx, []int64{id})
