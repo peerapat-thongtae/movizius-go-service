@@ -50,6 +50,7 @@ func init() {
 		TMDB:           tmdb.New(cfg.TMDBAccessToken),
 		TVMaze:         tvmaze.New(""),
 		Logger:         logger.New(),
+		Development:    cfg.IsDevelopment(),
 	})
 }
 

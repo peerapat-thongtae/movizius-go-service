@@ -16,6 +16,12 @@ type Config struct {
 	Port                         string
 	FirebaseServiceAccountBase64 string
 	TMDBAccessToken              string
+	NodeEnv                      string
+}
+
+// IsDevelopment reports whether the service is running in the development environment.
+func (c *Config) IsDevelopment() bool {
+	return c.NodeEnv == "development"
 }
 
 // Load reads required environment variables and returns a Config.
@@ -30,6 +36,7 @@ func Load() (*Config, error) {
 		Port:                         os.Getenv("PORT"),
 		FirebaseServiceAccountBase64: os.Getenv("FIREBASE_SERVICE_ACCOUNT_BASE64"),
 		TMDBAccessToken:              os.Getenv("TMDB_API_READ_ACCESS_TOKEN"),
+		NodeEnv:                      os.Getenv("NODE_ENV"),
 	}
 
 	if cfg.MongoURI == "" {

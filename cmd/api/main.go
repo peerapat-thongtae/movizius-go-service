@@ -82,6 +82,7 @@ func main() {
 		TMDB:           tmdb.New(cfg.TMDBAccessToken),
 		TVMaze:         tvmaze.New(""),
 		Logger:         log,
+		Development:    cfg.IsDevelopment(),
 	})); err != nil {
 		log.Error("server stopped", "error", err)
 		os.Exit(1)
