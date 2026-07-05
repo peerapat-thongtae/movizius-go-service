@@ -20,6 +20,12 @@ func NewSyncService(repo MovieRepository, tmdb *tmdb.Client) *MovieSyncService {
 	return &MovieSyncService{repo: repo, tmdb: tmdb}
 }
 
+// PruneUnacceptableUntracked deletes movie documents that fail the acceptability filter and are not
+// tracked by any user. When dryRun is true it returns the candidate ids without deleting them.
+func (s *MovieSyncService) PruneUnacceptableUntracked(ctx context.Context, dryRun bool) ([]int64, error) {
+	return s.repo.PruneUnacceptableUntracked(ctx, dryRun)
+}
+
 // Sync fetches TMDB detail for each ID in parallel and upserts into the movie collection.
 // When skipAcceptable is true, the acceptability filter is bypassed.
 func (s *MovieSyncService) Sync(ctx context.Context, ids []int64, skipAcceptable bool) error {

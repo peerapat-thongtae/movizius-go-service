@@ -37,8 +37,8 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux, auth func(http.Handler) htt
 	mux.HandleFunc("POST /sync/movie/changes", h.SyncChangesMovie)
 	mux.HandleFunc("POST /sync/tv/changes", h.SyncChangesTV)
 	mux.HandleFunc("POST /sync/tv/tvmaze-schedule", h.SyncTVMazeSchedule)
-	mux.HandleFunc("POST /sync/movie/cleanup-fields", h.CleanupMovieFields)
-	mux.HandleFunc("POST /sync/tv/cleanup-fields", h.CleanupTVFields)
+	mux.HandleFunc("POST /sync/movie/prune-unacceptable", h.PruneUnacceptableMovie)
+	mux.HandleFunc("POST /sync/tv/prune-unacceptable", h.PruneUnacceptableTV)
 }
 
 // SyncMovieByIDs syncs TMDB metadata for the movie IDs provided in the request body.
@@ -158,26 +158,30 @@ func (h *Handler) SyncTVMazeSchedule(w http.ResponseWriter, r *http.Request) {
 	response.Success(w, http.StatusOK, result)
 }
 
-// CleanupMovieFields removes stale keys from all movie documents that are no longer in the DB model.
-func (h *Handler) CleanupMovieFields(w http.ResponseWriter, r *http.Request) {
-	modified, err := h.service.CleanupMovieFields(r.Context())
+// PruneUnacceptableMovie deletes movie documents that fail the acceptability filter and are not
+// tracked by any user. With ?dryRun=true it only returns the ids that would be deleted.
+func (h *Handler) PruneUnacceptableMovie(w http.ResponseWriter, r *http.Request) {
+	dryRun := parseDryRun(r)
+	ids, err := h.service.PruneUnacceptableMovie(r.Context(), dryRun)
 	if err != nil {
 		h.log.Error("sync operation failed", "error", err, "path", r.URL.Path)
 		response.Error(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	response.Success(w, http.StatusOK, map[string]int64{"modified": modified})
+	response.Success(w, http.StatusOK, map[string]any{"dry_run": dryRun, "count": len(ids), "ids": ids})
 }
 
-// CleanupTVFields removes stale keys from all tv documents that are no longer in the DB model.
-func (h *Handler) CleanupTVFields(w http.ResponseWriter, r *http.Request) {
-	modified, err := h.service.CleanupTVFields(r.Context())
+// PruneUnacceptableTV deletes tv documents that fail the acceptability filter and are not tracked by
+// any user. With ?dryRun=true it only returns the ids that would be deleted.
+func (h *Handler) PruneUnacceptableTV(w http.ResponseWriter, r *http.Request) {
+	dryRun := parseDryRun(r)
+	ids, err := h.service.PruneUnacceptableTV(r.Context(), dryRun)
 	if err != nil {
 		h.log.Error("sync operation failed", "error", err, "path", r.URL.Path)
 		response.Error(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	response.Success(w, http.StatusOK, map[string]int64{"modified": modified})
+	response.Success(w, http.StatusOK, map[string]any{"dry_run": dryRun, "count": len(ids), "ids": ids})
 }
 
 func parseFrequency(r *http.Request) string {
@@ -194,6 +198,13 @@ func parseFrequency(r *http.Request) string {
 // When true, the acceptability filter is bypassed during sync.
 func parseSkipAcceptable(r *http.Request) bool {
 	b, _ := strconv.ParseBool(r.URL.Query().Get("skipAcceptable"))
+	return b
+}
+
+// parseDryRun reads the "dryRun" query param (default false).
+// When true, prune endpoints return the ids that would be deleted without deleting them.
+func parseDryRun(r *http.Request) bool {
+	b, _ := strconv.ParseBool(r.URL.Query().Get("dryRun"))
 	return b
 }
 

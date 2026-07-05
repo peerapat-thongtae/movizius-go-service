@@ -23,6 +23,7 @@ type MovieRepository interface {
 	UpsertDetail(ctx context.Context, data MovieResponse) error
 	DeleteByTMDBID(ctx context.Context, id int64) error
 	ReconcilePopularity(ctx context.Context, export map[int64]float64, maxDeleteRatio float64) (ReconcileResult, error)
+	PruneUnacceptableUntracked(ctx context.Context, dryRun bool) ([]int64, error)
 }
 
 type mongoMovieRepository struct {
@@ -102,6 +103,69 @@ func (r *mongoMovieRepository) DeleteByTMDBID(ctx context.Context, id int64) err
 		return fmt.Errorf("movie: delete movie_user %d: %w", id, err)
 	}
 	return nil
+}
+
+// PruneUnacceptableUntracked deletes movie documents that fail the acceptability filter and are not
+// tracked by any user (absent from movie_user). It returns the ids that were deleted; when dryRun is
+// true it returns the same set of candidate ids without deleting anything.
+func (r *mongoMovieRepository) PruneUnacceptableUntracked(ctx context.Context, dryRun bool) ([]int64, error) {
+	trackedRaw, err := r.db.Collection("movie_user").Distinct(ctx, "id", bson.M{})
+	if err != nil {
+		return nil, fmt.Errorf("movie: prune distinct tracked ids: %w", err)
+	}
+	tracked := make(map[int64]struct{}, len(trackedRaw))
+	for _, v := range trackedRaw {
+		switch id := v.(type) {
+		case int64:
+			tracked[id] = struct{}{}
+		case int32:
+			tracked[int64(id)] = struct{}{}
+		}
+	}
+
+	projection := bson.M{"_id": 0, "id": 1, "popularity": 1, "genres": 1, "original_language": 1, "status": 1}
+	cursor, err := r.db.Collection("movie").Find(ctx, bson.M{}, options.Find().SetProjection(projection))
+	if err != nil {
+		return nil, fmt.Errorf("movie: prune find: %w", err)
+	}
+	defer cursor.Close(ctx)
+
+	var toDelete []int64
+	for cursor.Next(ctx) {
+		var m Movie
+		if err := cursor.Decode(&m); err != nil {
+			return nil, fmt.Errorf("movie: prune decode: %w", err)
+		}
+		if _, isTracked := tracked[m.MovieID]; isTracked {
+			continue
+		}
+		if !isAcceptableMovieDoc(m) {
+			toDelete = append(toDelete, m.MovieID)
+		}
+	}
+	if err := cursor.Err(); err != nil {
+		return nil, fmt.Errorf("movie: prune cursor: %w", err)
+	}
+
+	if dryRun {
+		return toDelete, nil
+	}
+
+	for start := 0; start < len(toDelete); start += reconcileDeleteBatch {
+		end := start + reconcileDeleteBatch
+		if end > len(toDelete) {
+			end = len(toDelete)
+		}
+		filter := bson.M{"id": bson.M{"$in": toDelete[start:end]}}
+		if _, err := r.db.Collection("movie").DeleteMany(ctx, filter); err != nil {
+			return nil, fmt.Errorf("movie: prune delete movie: %w", err)
+		}
+		if _, err := r.db.Collection("movie_user").DeleteMany(ctx, filter); err != nil {
+			return nil, fmt.Errorf("movie: prune delete movie_user: %w", err)
+		}
+	}
+
+	return toDelete, nil
 }
 
 // reconcileUpdateBatch is the number of popularity updates flushed per BulkWrite.

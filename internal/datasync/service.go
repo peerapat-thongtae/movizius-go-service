@@ -537,14 +537,16 @@ func (s *SyncService) SyncTVMazeSchedule(ctx context.Context) (*SyncResult, erro
 	}, nil
 }
 
-// CleanupMovieFields removes stale keys from all movie documents that are no longer in the DB model.
-func (s *SyncService) CleanupMovieFields(ctx context.Context) (int64, error) {
-	return s.repo.CleanupMovieFields(ctx)
+// PruneUnacceptableMovie deletes movie documents that fail the acceptability filter and are not
+// tracked in movie_user. When dryRun is true it returns the ids that would be deleted without deleting.
+func (s *SyncService) PruneUnacceptableMovie(ctx context.Context, dryRun bool) ([]int64, error) {
+	return s.movieSync.PruneUnacceptableUntracked(ctx, dryRun)
 }
 
-// CleanupTVFields removes stale keys from all tv documents that are no longer in the DB model.
-func (s *SyncService) CleanupTVFields(ctx context.Context) (int64, error) {
-	return s.repo.CleanupTVFields(ctx)
+// PruneUnacceptableTV deletes tv documents that fail the acceptability filter and are not tracked in
+// tv_user. When dryRun is true it returns the ids that would be deleted without deleting.
+func (s *SyncService) PruneUnacceptableTV(ctx context.Context, dryRun bool) ([]int64, error) {
+	return s.tvSync.PruneUnacceptableUntracked(ctx, dryRun)
 }
 
 // toInt64 converts BSON-decoded numeric types to int64.

@@ -14,23 +14,42 @@ var unwantedGenreIDs = map[int64]bool{
 }
 
 func isAcceptableMovie(detail MovieResponse) bool {
-	if detail.Adult {
-		return false
-	}
-	if detail.Popularity < 2 {
-		return false
-	}
-	if len(detail.Genres) == 0 {
-		return false
-	}
-	if !availableLanguages[detail.OriginalLanguage] {
-		return false
-	}
-	if detail.Status == "Canceled" || detail.Status == "Rumored" {
-		return false
-	}
+	genreIDs := make([]int64, 0, len(detail.Genres))
 	for _, g := range detail.Genres {
-		if unwantedGenreIDs[g.ID] {
+		genreIDs = append(genreIDs, g.ID)
+	}
+	return acceptableMovie(detail.Adult, detail.Popularity, detail.OriginalLanguage, detail.Status, genreIDs)
+}
+
+// isAcceptableMovieDoc evaluates acceptability against a stored movie document. The adult flag is not
+// persisted, so it is treated as false (adult titles are already filtered out on insert).
+func isAcceptableMovieDoc(m Movie) bool {
+	var popularity float64
+	if m.Popularity != nil {
+		popularity = *m.Popularity
+	}
+	return acceptableMovie(false, popularity, m.OriginalLanguage, m.Status, m.Genres)
+}
+
+// acceptableMovie holds the shared movie acceptability rules over primitive fields.
+func acceptableMovie(adult bool, popularity float64, lang, status string, genreIDs []int64) bool {
+	if adult {
+		return false
+	}
+	if popularity < 2 {
+		return false
+	}
+	if len(genreIDs) == 0 {
+		return false
+	}
+	if !availableLanguages[lang] {
+		return false
+	}
+	if status == "Canceled" || status == "Rumored" {
+		return false
+	}
+	for _, id := range genreIDs {
+		if unwantedGenreIDs[id] {
 			return false
 		}
 	}

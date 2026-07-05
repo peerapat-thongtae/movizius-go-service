@@ -19,8 +19,6 @@ type SyncRepository interface {
 	CountTVIDs(ctx context.Context) (int, error)
 	GetMovieIDsPage(ctx context.Context, offset, limit int) ([]int64, error)
 	GetTVIDsPage(ctx context.Context, offset, limit int) ([]int64, error)
-	CleanupMovieFields(ctx context.Context) (int64, error)
-	CleanupTVFields(ctx context.Context) (int64, error)
 }
 
 type mongoSyncRepository struct {
@@ -84,33 +82,6 @@ func (r *mongoSyncRepository) GetMovieIDsPage(ctx context.Context, offset, limit
 
 func (r *mongoSyncRepository) GetTVIDsPage(ctx context.Context, offset, limit int) ([]int64, error) {
 	return getIDsPage(ctx, r.db.Collection("tv_user"), offset, limit)
-}
-
-func (r *mongoSyncRepository) CleanupMovieFields(ctx context.Context) (int64, error) {
-	res, err := r.db.Collection("movie").UpdateMany(ctx, bson.M{}, bson.M{"$unset": bson.M{
-		"adult": "", "backdrop_path": "", "belongs_to_collection": "",
-		"budget": "", "homepage": "", "origin_country": "", "overview": "",
-		"tagline": "", "video": "", "production_countries": "", "revenue": "",
-		"release_dates": "", "external_ids": "", "casts": "", "videos": "",
-		"softcore": "", "spoken_languages": "",
-	}})
-	if err != nil {
-		return 0, fmt.Errorf("datasync: cleanup movie fields: %w", err)
-	}
-	return res.ModifiedCount, nil
-}
-
-func (r *mongoSyncRepository) CleanupTVFields(ctx context.Context) (int64, error) {
-	res, err := r.db.Collection("tv").UpdateMany(ctx, bson.M{}, bson.M{"$unset": bson.M{
-		"adult": "", "backdrop_path": "", "created_by": "", "episode_run_time": "",
-		"homepage": "", "in_production": "", "languages": "", "networks": "",
-		"origin_country": "", "overview": "", "tagline": "", "production_countries": "",
-		"credits": "", "external_ids": "", "videos": "", "softcore": "", "spoken_languages": "",
-	}})
-	if err != nil {
-		return 0, fmt.Errorf("datasync: cleanup tv fields: %w", err)
-	}
-	return res.ModifiedCount, nil
 }
 
 func countDocs(ctx context.Context, coll *mongo.Collection) (int, error) {

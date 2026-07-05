@@ -25,6 +25,12 @@ func (s *TVSyncService) UpdateNextEpisodeAirDates(ctx context.Context, updates [
 	return s.repo.UpdateNextEpisodeAirDates(ctx, updates)
 }
 
+// PruneUnacceptableUntracked deletes tv documents that fail the acceptability filter and are not
+// tracked by any user. When dryRun is true it returns the candidate ids without deleting them.
+func (s *TVSyncService) PruneUnacceptableUntracked(ctx context.Context, dryRun bool) ([]int64, error) {
+	return s.repo.PruneUnacceptableUntracked(ctx, dryRun)
+}
+
 // Sync fetches TMDB detail for each ID in parallel and upserts into the tv collection.
 // When skipAcceptable is true, the acceptability filter is bypassed.
 func (s *TVSyncService) Sync(ctx context.Context, ids []int64, skipAcceptable bool) error {

@@ -24,6 +24,7 @@ type TVRepository interface {
 	UpsertDetail(ctx context.Context, data TVResponse) error
 	DeleteByTMDBID(ctx context.Context, id int64) error
 	ReconcilePopularity(ctx context.Context, export map[int64]float64, maxDeleteRatio float64) (ReconcileResult, error)
+	PruneUnacceptableUntracked(ctx context.Context, dryRun bool) ([]int64, error)
 	UpdateNextEpisodeAirDates(ctx context.Context, updates []NextEpisodeAirDateUpdate) error
 	GetNextEpisodeAirDatesByIDs(ctx context.Context, ids []int64) (map[int64]string, error)
 }
@@ -121,6 +122,69 @@ func (r *mongoTVRepository) DeleteByTMDBID(ctx context.Context, id int64) error 
 		return fmt.Errorf("tv: delete tv_user %d: %w", id, err)
 	}
 	return nil
+}
+
+// PruneUnacceptableUntracked deletes tv documents that fail the acceptability filter and are not
+// tracked by any user (absent from tv_user). It returns the ids that were deleted; when dryRun is true
+// it returns the same set of candidate ids without deleting anything.
+func (r *mongoTVRepository) PruneUnacceptableUntracked(ctx context.Context, dryRun bool) ([]int64, error) {
+	trackedRaw, err := r.db.Collection("tv_user").Distinct(ctx, "id", bson.M{})
+	if err != nil {
+		return nil, fmt.Errorf("tv: prune distinct tracked ids: %w", err)
+	}
+	tracked := make(map[int64]struct{}, len(trackedRaw))
+	for _, v := range trackedRaw {
+		switch id := v.(type) {
+		case int64:
+			tracked[id] = struct{}{}
+		case int32:
+			tracked[int64(id)] = struct{}{}
+		}
+	}
+
+	projection := bson.M{"_id": 0, "id": 1, "popularity": 1, "genres": 1, "original_language": 1, "status": 1, "type": 1}
+	cursor, err := r.db.Collection("tv").Find(ctx, bson.M{}, options.Find().SetProjection(projection))
+	if err != nil {
+		return nil, fmt.Errorf("tv: prune find: %w", err)
+	}
+	defer cursor.Close(ctx)
+
+	var toDelete []int64
+	for cursor.Next(ctx) {
+		var t TV
+		if err := cursor.Decode(&t); err != nil {
+			return nil, fmt.Errorf("tv: prune decode: %w", err)
+		}
+		if _, isTracked := tracked[t.TVID]; isTracked {
+			continue
+		}
+		if !isAcceptableTVDoc(t) {
+			toDelete = append(toDelete, t.TVID)
+		}
+	}
+	if err := cursor.Err(); err != nil {
+		return nil, fmt.Errorf("tv: prune cursor: %w", err)
+	}
+
+	if dryRun {
+		return toDelete, nil
+	}
+
+	for start := 0; start < len(toDelete); start += reconcileDeleteBatch {
+		end := start + reconcileDeleteBatch
+		if end > len(toDelete) {
+			end = len(toDelete)
+		}
+		filter := bson.M{"id": bson.M{"$in": toDelete[start:end]}}
+		if _, err := r.db.Collection("tv").DeleteMany(ctx, filter); err != nil {
+			return nil, fmt.Errorf("tv: prune delete tv: %w", err)
+		}
+		if _, err := r.db.Collection("tv_user").DeleteMany(ctx, filter); err != nil {
+			return nil, fmt.Errorf("tv: prune delete tv_user: %w", err)
+		}
+	}
+
+	return toDelete, nil
 }
 
 // reconcileUpdateBatch is the number of popularity updates flushed per BulkWrite.
