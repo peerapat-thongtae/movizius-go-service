@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math/rand"
 	"sync"
 	"time"
 
@@ -20,6 +21,13 @@ const randomSeenTTL = 24 * time.Hour
 
 // randomSeenCap bounds how many ids we remember per user, dropping the oldest.
 const randomSeenCap = 300
+
+// randomMaxPages caps how many trending pages Random will fetch while trying
+// to fill total.
+const randomMaxPages = 5
+
+// randomTimeWindow is the trending time window Random samples from.
+const randomTimeWindow = "day"
 
 // MovieService holds the business logic for the movie feature.
 type MovieService struct {
@@ -128,91 +136,88 @@ func (s *MovieService) Discover(ctx context.Context, userID string, q DiscoverQu
 	return results, total, nil
 }
 
-// Random returns up to pageSize movies the user hasn't tracked yet, excluding any
-// movie whose account_status (derived from movie_user) matches withoutStatus.
-// Results are an even split between upcoming releases and popular titles (e.g.
-// pageSize=20 -> 10 upcoming + 10 popular), topping up from the popular pool
-// if either side comes up short.
-func (s *MovieService) Random(ctx context.Context, userID string, pageSize int, withoutStatus []string) ([]MovieResponse, error) {
+// Random returns up to total movies the user hasn't tracked yet (per withoutStatus),
+// sampled by shuffling TMDB's trending pool (day window, already filtered through
+// isAcceptableMovie via Trending). Trending is paged (up to randomMaxPages) until
+// enough untracked, unseen candidates are gathered or trending is exhausted. Ids
+// served recently (see the Redis "seen" cache) are excluded so consecutive calls
+// don't repeat the same titles.
+func (s *MovieService) Random(ctx context.Context, userID string, total int, withoutStatus []string) ([]MovieResponse, error) {
 	seenIDs := s.loadSeenIDs(ctx, userID)
+	seenSet := make(map[int64]struct{}, len(seenIDs))
+	for _, id := range seenIDs {
+		seenSet[id] = struct{}{}
+	}
 
-	upcomingQuota := pageSize / 2
-	popularQuota := pageSize - upcomingQuota
-
-	upcoming, err := s.repo.RandomIDs(ctx, userID, true, upcomingQuota, withoutStatus, seenIDs)
+	excludeSet, err := s.trackedExcludeIDs(ctx, userID, withoutStatus)
 	if err != nil {
-		return nil, fmt.Errorf("movie service: random upcoming ids: %w", err)
-	}
-	popular, err := s.repo.RandomIDs(ctx, userID, false, popularQuota, withoutStatus, seenIDs)
-	if err != nil {
-		return nil, fmt.Errorf("movie service: random popular ids: %w", err)
+		return nil, err
 	}
 
-	ids := make([]int64, 0, pageSize)
-	seen := make(map[int64]struct{}, pageSize)
-	for _, id := range upcoming {
-		ids = append(ids, id)
-		seen[id] = struct{}{}
-	}
-	for _, id := range popular {
-		if _, ok := seen[id]; !ok {
-			ids = append(ids, id)
-			seen[id] = struct{}{}
-		}
-	}
+	pool := make([]MovieResponse, 0, total)
+	poolSet := make(map[int64]struct{}, total)
 
-	if len(ids) < pageSize {
-		exclude := make([]int64, 0, len(seenIDs)+len(ids))
-		exclude = append(exclude, seenIDs...)
-		exclude = append(exclude, ids...)
-		topUp, err := s.repo.RandomIDs(ctx, userID, false, pageSize-len(ids), withoutStatus, exclude)
+	for page := 1; page <= randomMaxPages && len(pool) < total; page++ {
+		trendingPage, err := s.Trending(ctx, randomTimeWindow, page)
 		if err != nil {
-			return nil, fmt.Errorf("movie service: random top-up ids: %w", err)
+			return nil, fmt.Errorf("movie service: random trending page %d: %w", page, err)
 		}
-		for _, id := range topUp {
-			if _, ok := seen[id]; !ok {
-				ids = append(ids, id)
-				seen[id] = struct{}{}
-			}
+		if len(trendingPage.Results) == 0 {
+			break
 		}
-	}
-
-	if len(ids) == 0 {
-		return []MovieResponse{}, nil
-	}
-
-	results := make([]MovieResponse, len(ids))
-	errs := make([]error, len(ids))
-
-	var wg sync.WaitGroup
-	for i, id := range ids {
-		wg.Add(1)
-		go func(idx int, movieID int64) {
-			defer wg.Done()
-			var detail MovieResponse
-			if err := s.tmdb.GetMovieDetail(ctx, movieID, appendToResponse, &detail); err != nil {
-				errs[idx] = fmt.Errorf("tmdb detail for id %d: %w", movieID, err)
-				return
+		for _, m := range trendingPage.Results {
+			if _, ok := poolSet[m.ID]; ok {
+				continue
 			}
-			detail.MediaType = "movie"
-			if detail.ImdbID == "" && detail.ExternalIDs != nil {
-				detail.ImdbID = detail.ExternalIDs.ImdbID
+			if _, ok := excludeSet[m.ID]; ok {
+				continue
 			}
-			detail.ReleaseDateTH = extractReleaseDateTH(detail)
-			results[idx] = detail
-		}(i, id)
-	}
-	wg.Wait()
-
-	for _, err := range errs {
-		if err != nil {
-			return nil, fmt.Errorf("movie service: enrich random from tmdb: %w", err)
+			if _, ok := seenSet[m.ID]; ok {
+				continue
+			}
+			poolSet[m.ID] = struct{}{}
+			pool = append(pool, m)
 		}
 	}
 
+	rand.Shuffle(len(pool), func(i, j int) { pool[i], pool[j] = pool[j], pool[i] })
+	if len(pool) > total {
+		pool = pool[:total]
+	}
+
+	ids := make([]int64, len(pool))
+	for i, m := range pool {
+		ids[i] = m.ID
+	}
 	s.saveSeenIDs(ctx, userID, seenIDs, ids)
 
-	return results, nil
+	return pool, nil
+}
+
+// trackedExcludeIDs returns the set of movie ids the user has tracked with an
+// account_status in withoutStatus (nil/empty withoutStatus excludes nothing).
+func (s *MovieService) trackedExcludeIDs(ctx context.Context, userID string, withoutStatus []string) (map[int64]struct{}, error) {
+	excludeSet := make(map[int64]struct{})
+	if len(withoutStatus) == 0 {
+		return excludeSet, nil
+	}
+	statuses := make(map[string]struct{}, len(withoutStatus))
+	for _, s := range withoutStatus {
+		statuses[s] = struct{}{}
+	}
+	states, err := s.repo.FindByUserID(ctx, userID)
+	if err != nil {
+		return nil, fmt.Errorf("movie service: tracked exclude ids: %w", err)
+	}
+	for _, st := range states {
+		status := accountStatus(st.WatchedAt)
+		if status != nil {
+			if _, ok := statuses[*status]; ok {
+				excludeSet[st.MovieID] = struct{}{}
+			}
+		}
+	}
+	return excludeSet, nil
 }
 
 // searchResult is a minimal TMDB search result used only to collect IDs.

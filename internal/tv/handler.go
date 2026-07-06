@@ -151,10 +151,10 @@ func (h *Handler) UpsertEpisodes(w http.ResponseWriter, r *http.Request) {
 }
 
 // Random returns a page of TV series the user hasn't watchlisted/watched yet,
-// prioritizing series with an upcoming episode/premiere and falling back to popular titles.
+// sampled from TMDB's trending pool.
 //
 //	@Summary		Random TV suggestions
-//	@Description	Returns TV series the user has no watchlist/watched record for, preferring series with an upcoming episode (next_episode_to_air, falling back to first_air_date) and falling back to popular titles. Results are randomized on every call.
+//	@Description	Returns TV series the user has no watchlist/watched record for, sampled by shuffling TMDB's trending pool (already filtered through the same acceptability rules as /trending) and excluding recently-served titles. Results are randomized on every call.
 //	@Tags			tv
 //	@Produce		json
 //	@Security		BearerAuth

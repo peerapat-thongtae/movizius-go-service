@@ -142,10 +142,10 @@ func (h *Handler) GetStates(w http.ResponseWriter, r *http.Request) {
 }
 
 // Random returns a page of movies the user hasn't watchlisted/watched yet,
-// prioritizing upcoming releases and falling back to popular titles.
+// sampled from TMDB's trending pool.
 //
 //	@Summary		Random movie suggestions
-//	@Description	Returns movies the user has no watchlist/watched record for, preferring upcoming releases and falling back to popular titles. Results are randomized on every call.
+//	@Description	Returns movies the user has no watchlist/watched record for, sampled by shuffling TMDB's trending pool (already filtered through the same acceptability rules as /trending) and excluding recently-served titles. Results are randomized on every call.
 //	@Tags			movies
 //	@Produce		json
 //	@Security		BearerAuth
