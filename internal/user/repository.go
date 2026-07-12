@@ -97,13 +97,21 @@ func (r *mongoUserRepository) UpsertNewFromAuth0(ctx context.Context, auth0ID st
 }
 
 // TouchLastLogin refreshes lastLoginAt/updatedAt for an already-known user,
-// without calling the Auth0 Management API.
+// without calling the Auth0 Management API. It also backfills the top-level
+// id field for records created before that field existed, without
+// overwriting it if already set.
 func (r *mongoUserRepository) TouchLastLogin(ctx context.Context, auth0ID string) error {
 	coll := r.db.Collection(collectionName)
 	now := time.Now().UTC()
 
 	filter := bson.M{"identities.auth0Id": auth0ID}
-	update := bson.M{"$set": bson.M{"lastLoginAt": now, "updatedAt": now}}
+	update := mongo.Pipeline{
+		bson.D{{Key: "$set", Value: bson.D{
+			{Key: "lastLoginAt", Value: now},
+			{Key: "updatedAt", Value: now},
+			{Key: "id", Value: bson.D{{Key: "$ifNull", Value: bson.A{"$id", auth0ID}}}},
+		}}},
+	}
 
 	_, err := coll.UpdateOne(ctx, filter, update)
 	if err != nil {
@@ -113,13 +121,23 @@ func (r *mongoUserRepository) TouchLastLogin(ctx context.Context, auth0ID string
 }
 
 // RefreshProfile force-updates the email, profile, and linked-identities
-// fields from Auth0 (picking up newly linked/unlinked accounts).
+// fields from Auth0 (picking up newly linked/unlinked accounts). It also
+// backfills the top-level id field for records created before that field
+// existed, without overwriting it if already set.
 func (r *mongoUserRepository) RefreshProfile(ctx context.Context, auth0ID string, identities []Identity, email string, profile Profile) error {
 	coll := r.db.Collection(collectionName)
 	now := time.Now().UTC()
 
 	filter := bson.M{"identities.auth0Id": auth0ID}
-	update := bson.M{"$set": bson.M{"identities": identities, "email": email, "profile": profile, "updatedAt": now}}
+	update := mongo.Pipeline{
+		bson.D{{Key: "$set", Value: bson.D{
+			{Key: "identities", Value: identities},
+			{Key: "email", Value: email},
+			{Key: "profile", Value: profile},
+			{Key: "updatedAt", Value: now},
+			{Key: "id", Value: bson.D{{Key: "$ifNull", Value: bson.A{"$id", auth0ID}}}},
+		}}},
+	}
 
 	_, err := coll.UpdateOne(ctx, filter, update)
 	if err != nil {
