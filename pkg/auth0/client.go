@@ -4,6 +4,7 @@ package auth0
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/auth0/go-auth0/management"
 )
@@ -24,12 +25,23 @@ type Client struct {
 // New authenticates against the Auth0 Management API using the client
 // credentials flow. The returned Client is safe for concurrent use and
 // should be created once at startup.
+//
+// domain accepts either a bare domain ("tenant.auth0.com") or a full issuer
+// URL ("https://tenant.auth0.com/") — the scheme and trailing slash are
+// stripped, since the Management SDK requires a bare domain.
 func New(ctx context.Context, domain, clientID, clientSecret string) (*Client, error) {
+	domain = normalizeDomain(domain)
 	mgmt, err := management.New(domain, management.WithClientCredentials(ctx, clientID, clientSecret))
 	if err != nil {
 		return nil, fmt.Errorf("auth0: initialize management client: %w", err)
 	}
 	return &Client{mgmt: mgmt}, nil
+}
+
+func normalizeDomain(domain string) string {
+	domain = strings.TrimPrefix(domain, "https://")
+	domain = strings.TrimPrefix(domain, "http://")
+	return strings.TrimRight(domain, "/")
 }
 
 // GetProfile fetches the Auth0 user record for the given user ID (the JWT
