@@ -18,7 +18,7 @@ type TVRepository interface {
 	GetStatesByUserID(ctx context.Context, userID string) ([]TVStateResponse, error)
 	FindByTMDBIDs(ctx context.Context, ids []int64) (map[int64]TV, error)
 	DiscoverIDs(ctx context.Context, userID string, q DiscoverQuery) (ids []int64, total int, err error)
-	UpsertTVState(ctx context.Context, userID string, tvID int64, episodes []EpisodeWatched) error
+	UpsertTVState(ctx context.Context, userID string, tvID int64, episodes []EpisodeWatched, rating *float64) error
 	UpsertEpisodes(ctx context.Context, userID string, req UpsertEpisodesRequest) error
 	UpsertDetail(ctx context.Context, data TVResponse) error
 	DeleteByTMDBID(ctx context.Context, id int64) error
@@ -55,13 +55,16 @@ func (r *mongoTVRepository) FindByTMDBIDs(ctx context.Context, ids []int64) (map
 	return result, cursor.Err()
 }
 
-func (r *mongoTVRepository) UpsertTVState(ctx context.Context, userID string, tvID int64, episodes []EpisodeWatched) error {
+func (r *mongoTVRepository) UpsertTVState(ctx context.Context, userID string, tvID int64, episodes []EpisodeWatched, rating *float64) error {
 	now := time.Now().UTC()
 	filter := bson.M{"id": tvID, "user_id": userID}
 
 	set := bson.M{"updated_at": now}
 	if episodes != nil {
 		set["episode_watched"] = episodes
+	}
+	if rating != nil {
+		set["rating"] = *rating
 	}
 
 	update := bson.M{

@@ -35,8 +35,9 @@ type DiscoverQuery struct {
 
 // UpsertStateRequest is the body for POST /tv.
 type UpsertStateRequest struct {
-	ID     int64  `json:"id"`
-	Status string `json:"status"`
+	ID     int64    `json:"id"`
+	Status string   `json:"status"`
+	Rating *float64 `json:"rating,omitempty"`
 }
 
 // UpsertEpisodesRequest is the body for POST /tv/episodes.

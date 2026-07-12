@@ -72,15 +72,21 @@ func (r *mongoMovieRepository) UpsertState(ctx context.Context, userID string, r
 	now := time.Now().UTC()
 	filter := bson.M{"id": req.ID, "user_id": userID}
 
+	set := bson.M{"updated_at": now}
+	if req.Rating != nil {
+		set["rating"] = *req.Rating
+	}
+
 	var update bson.M
 	if req.Status == "watched" {
+		set["watched_at"] = now
 		update = bson.M{
-			"$set":         bson.M{"watched_at": now, "updated_at": now},
+			"$set":         set,
 			"$setOnInsert": bson.M{"watchlisted_at": now, "media_type": "movie"},
 		}
 	} else {
 		update = bson.M{
-			"$set":         bson.M{"updated_at": now},
+			"$set":         set,
 			"$unset":       bson.M{"watched_at": ""},
 			"$setOnInsert": bson.M{"watchlisted_at": now, "media_type": "movie"},
 		}

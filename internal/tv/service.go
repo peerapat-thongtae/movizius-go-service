@@ -417,9 +417,12 @@ func (s *TVService) UpsertTVState(ctx context.Context, userID string, req Upsert
 	if req.Status != "watched" && req.Status != "watchlist" {
 		return fmt.Errorf("tv service: invalid status %q", req.Status)
 	}
+	if req.Rating != nil && (*req.Rating < 0 || *req.Rating > 10) {
+		return fmt.Errorf("tv service: invalid rating %v", *req.Rating)
+	}
 
 	if req.Status == "watchlist" {
-		return s.repo.UpsertTVState(ctx, userID, req.ID, nil)
+		return s.repo.UpsertTVState(ctx, userID, req.ID, nil, req.Rating)
 	}
 
 	// Fetch show summary to get the season list.
@@ -483,7 +486,7 @@ func (s *TVService) UpsertTVState(ctx context.Context, userID string, req Upsert
 		allEpisodes = append(allEpisodes, r.episodes...)
 	}
 
-	return s.repo.UpsertTVState(ctx, userID, req.ID, allEpisodes)
+	return s.repo.UpsertTVState(ctx, userID, req.ID, allEpisodes, req.Rating)
 }
 
 // UpsertEpisodes adds specific episodes to the user's TV watch history.

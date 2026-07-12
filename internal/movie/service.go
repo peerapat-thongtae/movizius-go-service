@@ -406,6 +406,9 @@ func (s *MovieService) UpsertState(ctx context.Context, userID string, req Upser
 	if req.Status != "watched" && req.Status != "watchlist" {
 		return fmt.Errorf("movie service: invalid status %q", req.Status)
 	}
+	if req.Rating != nil && (*req.Rating < 0 || *req.Rating > 10) {
+		return fmt.Errorf("movie service: invalid rating %v", *req.Rating)
+	}
 	return s.repo.UpsertState(ctx, userID, req)
 }
 

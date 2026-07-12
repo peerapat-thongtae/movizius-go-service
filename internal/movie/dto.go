@@ -29,8 +29,9 @@ type DiscoverQuery struct {
 
 // UpsertStateRequest is the body for POST /movie.
 type UpsertStateRequest struct {
-	ID     int64  `json:"id"`
-	Status string `json:"status"`
+	ID     int64    `json:"id"`
+	Status string   `json:"status"`
+	Rating *float64 `json:"rating,omitempty"`
 }
 
 // discoverQueryFromRequest parses DiscoverQuery from the request's URL query params.

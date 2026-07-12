@@ -80,4 +80,5 @@ type TVUser struct {
 	WatchedAt      *time.Time         `bson:"watched_at,omitempty"     json:"watched_at,omitempty"`
 	UpdatedAt      time.Time          `bson:"updated_at"               json:"-"`
 	AccountStatus  string             `bson:"account_status,omitempty" json:"account_status,omitempty"`
+	Rating         *float64           `bson:"rating,omitempty"         json:"rating,omitempty"`
 }
