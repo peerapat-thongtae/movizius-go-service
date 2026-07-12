@@ -16,9 +16,9 @@ const collectionName = "user"
 // UserRepository is the data access contract for the user collection.
 type UserRepository interface {
 	FindByAuth0ID(ctx context.Context, auth0ID string) (*User, error)
-	UpsertNewFromAuth0(ctx context.Context, identity Identity, email string, profile Profile) error
+	UpsertNewFromAuth0(ctx context.Context, auth0ID string, identities []Identity, email string, profile Profile) error
 	TouchLastLogin(ctx context.Context, auth0ID string) error
-	RefreshProfile(ctx context.Context, auth0ID string, email string, profile Profile) error
+	RefreshProfile(ctx context.Context, auth0ID string, identities []Identity, email string, profile Profile) error
 }
 
 type mongoUserRepository struct {
@@ -59,16 +59,18 @@ func (r *mongoUserRepository) FindByAuth0ID(ctx context.Context, auth0ID string)
 	return &u, nil
 }
 
-// UpsertNewFromAuth0 creates a new user record on first login. If a record
-// already exists for this Auth0 identity, it is left untouched.
-func (r *mongoUserRepository) UpsertNewFromAuth0(ctx context.Context, identity Identity, email string, profile Profile) error {
+// UpsertNewFromAuth0 creates a new user record on first login, storing every
+// identity Auth0 has linked to this account (not just the one from the
+// current sub claim). If a record already exists for this Auth0 identity,
+// it is left untouched.
+func (r *mongoUserRepository) UpsertNewFromAuth0(ctx context.Context, auth0ID string, identities []Identity, email string, profile Profile) error {
 	coll := r.db.Collection(collectionName)
 	now := time.Now().UTC()
 
-	filter := bson.M{"identities.auth0Id": identity.Auth0ID}
+	filter := bson.M{"identities.auth0Id": auth0ID}
 	update := bson.M{
 		"$setOnInsert": bson.M{
-			"identities":            []Identity{identity},
+			"identities":            identities,
 			"email":                 email,
 			"profile":               profile,
 			"preferences":           bson.M{},
@@ -82,7 +84,7 @@ func (r *mongoUserRepository) UpsertNewFromAuth0(ctx context.Context, identity I
 
 	_, err := coll.UpdateOne(ctx, filter, update, options.Update().SetUpsert(true))
 	if err != nil {
-		return fmt.Errorf("user: upsert new from auth0 %q: %w", identity.Auth0ID, err)
+		return fmt.Errorf("user: upsert new from auth0 %q: %w", auth0ID, err)
 	}
 	return nil
 }
@@ -103,13 +105,14 @@ func (r *mongoUserRepository) TouchLastLogin(ctx context.Context, auth0ID string
 	return nil
 }
 
-// RefreshProfile force-updates the email and profile fields from Auth0.
-func (r *mongoUserRepository) RefreshProfile(ctx context.Context, auth0ID string, email string, profile Profile) error {
+// RefreshProfile force-updates the email, profile, and linked-identities
+// fields from Auth0 (picking up newly linked/unlinked accounts).
+func (r *mongoUserRepository) RefreshProfile(ctx context.Context, auth0ID string, identities []Identity, email string, profile Profile) error {
 	coll := r.db.Collection(collectionName)
 	now := time.Now().UTC()
 
 	filter := bson.M{"identities.auth0Id": auth0ID}
-	update := bson.M{"$set": bson.M{"email": email, "profile": profile, "updatedAt": now}}
+	update := bson.M{"$set": bson.M{"identities": identities, "email": email, "profile": profile, "updatedAt": now}}
 
 	_, err := coll.UpdateOne(ctx, filter, update)
 	if err != nil {

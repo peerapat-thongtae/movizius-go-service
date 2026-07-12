@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"strings"
 
 	"github.com/peera/movizius-go-service/pkg/auth0"
 )
@@ -45,8 +44,8 @@ func (s *UserService) EnsureUser(ctx context.Context, auth0ID string) (*User, er
 		return nil, fmt.Errorf("user service: ensure user: %w", err)
 	}
 
-	identity := Identity{Provider: parseProvider(auth0ID), Auth0ID: auth0ID}
-	if err := s.repo.UpsertNewFromAuth0(ctx, identity, profile.Email, Profile{Name: profile.Name, Avatar: profile.Avatar}); err != nil {
+	identities := toIdentities(profile.Identities)
+	if err := s.repo.UpsertNewFromAuth0(ctx, auth0ID, identities, profile.Email, Profile{Name: profile.Name, Avatar: profile.Avatar}); err != nil {
 		return nil, fmt.Errorf("user service: ensure user: %w", err)
 	}
 
@@ -65,6 +64,7 @@ func (s *UserService) SyncFromAuth0(ctx context.Context, auth0ID string) (*User,
 		return nil, fmt.Errorf("user service: sync from auth0: %w", err)
 	}
 	userProfile := Profile{Name: profile.Name, Avatar: profile.Avatar}
+	identities := toIdentities(profile.Identities)
 
 	existing, err := s.repo.FindByAuth0ID(ctx, auth0ID)
 	if err != nil {
@@ -72,11 +72,10 @@ func (s *UserService) SyncFromAuth0(ctx context.Context, auth0ID string) (*User,
 	}
 
 	if existing == nil {
-		identity := Identity{Provider: parseProvider(auth0ID), Auth0ID: auth0ID}
-		if err := s.repo.UpsertNewFromAuth0(ctx, identity, profile.Email, userProfile); err != nil {
+		if err := s.repo.UpsertNewFromAuth0(ctx, auth0ID, identities, profile.Email, userProfile); err != nil {
 			return nil, fmt.Errorf("user service: sync from auth0: %w", err)
 		}
-	} else if err := s.repo.RefreshProfile(ctx, auth0ID, profile.Email, userProfile); err != nil {
+	} else if err := s.repo.RefreshProfile(ctx, auth0ID, identities, profile.Email, userProfile); err != nil {
 		return nil, fmt.Errorf("user service: sync from auth0: %w", err)
 	}
 
@@ -87,12 +86,12 @@ func (s *UserService) SyncFromAuth0(ctx context.Context, auth0ID string) (*User,
 	return synced, nil
 }
 
-// parseProvider extracts the Auth0 connection/provider from a sub claim of
-// the form "provider|id" (e.g. "line|xxx", "auth0|xxx", "google-oauth2|xxx").
-func parseProvider(auth0ID string) string {
-	provider, _, found := strings.Cut(auth0ID, "|")
-	if !found {
-		return auth0ID
+// toIdentities converts the Auth0 client's Identity list to this package's
+// storage shape.
+func toIdentities(src []auth0.Identity) []Identity {
+	identities := make([]Identity, len(src))
+	for i, id := range src {
+		identities[i] = Identity{Provider: id.Provider, Auth0ID: id.Auth0ID}
 	}
-	return provider
+	return identities
 }
