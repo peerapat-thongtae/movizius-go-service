@@ -26,7 +26,7 @@ type mongoUserRepository struct {
 }
 
 // NewRepository constructs a UserRepository backed by MongoDB and ensures
-// the unique index on identities.auth0Id exists.
+// the unique indexes on id and identities.auth0Id exist.
 func NewRepository(db *mongo.Database) UserRepository {
 	r := &mongoUserRepository{db: db}
 	r.ensureIndexes()
@@ -38,11 +38,17 @@ func (r *mongoUserRepository) ensureIndexes() {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	model := mongo.IndexModel{
-		Keys:    bson.D{{Key: "identities.auth0Id", Value: 1}},
-		Options: options.Index().SetUnique(true).SetName("identities_auth0Id_unique"),
+	models := []mongo.IndexModel{
+		{
+			Keys:    bson.D{{Key: "id", Value: 1}},
+			Options: options.Index().SetUnique(true).SetName("id_unique"),
+		},
+		{
+			Keys:    bson.D{{Key: "identities.auth0Id", Value: 1}},
+			Options: options.Index().SetUnique(true).SetName("identities_auth0Id_unique"),
+		},
 	}
-	_, _ = coll.Indexes().CreateOne(ctx, model)
+	_, _ = coll.Indexes().CreateMany(ctx, models)
 }
 
 // FindByAuth0ID returns the user linked to the given Auth0 identity, or
@@ -70,6 +76,7 @@ func (r *mongoUserRepository) UpsertNewFromAuth0(ctx context.Context, auth0ID st
 	filter := bson.M{"identities.auth0Id": auth0ID}
 	update := bson.M{
 		"$setOnInsert": bson.M{
+			"id":                    auth0ID,
 			"identities":            identities,
 			"email":                 email,
 			"profile":               profile,

@@ -21,14 +21,18 @@ type Profile struct {
 
 // User represents a document in the "user" collection.
 type User struct {
-	ID                    primitive.ObjectID `bson:"_id,omitempty"          json:"id"`
-	Identities            []Identity         `bson:"identities"             json:"identities"`
-	Email                 string             `bson:"email"                  json:"email"`
-	Profile               Profile            `bson:"profile"                json:"profile"`
-	Preferences           bson.M             `bson:"preferences"            json:"preferences"`
-	RecommendationProfile bson.M             `bson:"recommendationProfile"  json:"recommendationProfile"`
-	Status                string             `bson:"status"                 json:"status"`
-	CreatedAt             time.Time          `bson:"createdAt"              json:"createdAt"`
-	UpdatedAt             time.Time          `bson:"updatedAt"              json:"updatedAt"`
-	LastLoginAt           time.Time          `bson:"lastLoginAt"            json:"lastLoginAt"`
+	ID primitive.ObjectID `bson:"_id,omitempty" json:"_id"`
+	// Auth0ID is the sub claim from the token that created this record —
+	// the same value other collections (movie_user, tv_user, notification
+	// devices, ...) store as user_id, so it's the natural join key.
+	Auth0ID               string     `bson:"id"                     json:"id"`
+	Identities            []Identity `bson:"identities"             json:"identities"`
+	Email                 string     `bson:"email"                  json:"email"`
+	Profile               Profile    `bson:"profile"                json:"profile"`
+	Preferences           bson.M     `bson:"preferences"            json:"preferences"`
+	RecommendationProfile bson.M     `bson:"recommendationProfile"  json:"recommendationProfile"`
+	Status                string     `bson:"status"                 json:"status"`
+	CreatedAt             time.Time  `bson:"createdAt"              json:"createdAt"`
+	UpdatedAt             time.Time  `bson:"updatedAt"              json:"updatedAt"`
+	LastLoginAt           time.Time  `bson:"lastLoginAt"            json:"lastLoginAt"`
 }

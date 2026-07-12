@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strings"
 
 	"github.com/peera/movizius-go-service/pkg/auth0"
 )
@@ -44,7 +45,7 @@ func (s *UserService) EnsureUser(ctx context.Context, auth0ID string) (*User, er
 		return nil, fmt.Errorf("user service: ensure user: %w", err)
 	}
 
-	identities := toIdentities(profile.Identities)
+	identities := toIdentities(auth0ID, profile.Identities)
 	if err := s.repo.UpsertNewFromAuth0(ctx, auth0ID, identities, profile.Email, Profile{Name: profile.Name, Avatar: profile.Avatar}); err != nil {
 		return nil, fmt.Errorf("user service: ensure user: %w", err)
 	}
@@ -64,7 +65,7 @@ func (s *UserService) SyncFromAuth0(ctx context.Context, auth0ID string) (*User,
 		return nil, fmt.Errorf("user service: sync from auth0: %w", err)
 	}
 	userProfile := Profile{Name: profile.Name, Avatar: profile.Avatar}
-	identities := toIdentities(profile.Identities)
+	identities := toIdentities(auth0ID, profile.Identities)
 
 	existing, err := s.repo.FindByAuth0ID(ctx, auth0ID)
 	if err != nil {
@@ -87,11 +88,24 @@ func (s *UserService) SyncFromAuth0(ctx context.Context, auth0ID string) (*User,
 }
 
 // toIdentities converts the Auth0 client's Identity list to this package's
-// storage shape.
-func toIdentities(src []auth0.Identity) []Identity {
-	identities := make([]Identity, len(src))
-	for i, id := range src {
-		identities[i] = Identity{Provider: id.Provider, Auth0ID: id.Auth0ID}
+// storage shape, and guarantees the literal sub claim from the token
+// (authID) is present verbatim in the result — even if it doesn't exactly
+// match any provider|userID pair reconstructed from the Management API
+// response. This keeps identities.auth0Id lookups (TouchLastLogin,
+// FindByAuth0ID) reliable regardless of any formatting drift between the
+// token issuer and the Management API.
+func toIdentities(authID string, src []auth0.Identity) []Identity {
+	identities := make([]Identity, 0, len(src)+1)
+	found := false
+	for _, id := range src {
+		identities = append(identities, Identity{Provider: id.Provider, Auth0ID: id.Auth0ID})
+		if id.Auth0ID == authID {
+			found = true
+		}
+	}
+	if !found {
+		provider, _, _ := strings.Cut(authID, "|")
+		identities = append(identities, Identity{Provider: provider, Auth0ID: authID})
 	}
 	return identities
 }
