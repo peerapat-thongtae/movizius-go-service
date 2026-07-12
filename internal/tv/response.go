@@ -124,6 +124,7 @@ type TVStateResponse struct {
 	LastEpisodeToAir *StateEpisode    `bson:"last_episode_to_air" json:"last_episode_to_air"`
 	Seasons          []StateSeason    `bson:"seasons"             json:"seasons"`
 	WatchedSeasons   []int            `bson:"watched_seasons"     json:"watched_seasons"`
+	Rating           *float64         `bson:"rating,omitempty"    json:"rating,omitempty"`
 }
 
 // UnmarshalJSON remaps TMDB's "watch/providers" key to the struct's WatchProviders field.

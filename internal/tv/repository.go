@@ -915,6 +915,7 @@ func buildStatesPipeline(userID string) bson.A {
 			{Key: "last_episode_to_air", Value: "$tv.last_episode_to_air"},
 			{Key: "seasons", Value: "$tv.seasons"},
 			{Key: "watched_seasons", Value: 1},
+			{Key: "rating", Value: 1},
 		}}},
 	}
 }

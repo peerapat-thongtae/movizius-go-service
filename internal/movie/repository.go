@@ -72,19 +72,26 @@ func (r *mongoMovieRepository) UpsertState(ctx context.Context, userID string, r
 	now := time.Now().UTC()
 	filter := bson.M{"id": req.ID, "user_id": userID}
 
-	set := bson.M{"updated_at": now}
-	if req.Rating != nil {
-		set["rating"] = *req.Rating
-	}
-
-	var update bson.M
+	var update any
 	if req.Status == "watched" {
-		set["watched_at"] = now
-		update = bson.M{
-			"$set":         set,
-			"$setOnInsert": bson.M{"watchlisted_at": now, "media_type": "movie"},
+		// Pipeline update: preserve an existing watched_at instead of overwriting it.
+		// $setOnInsert can't be mixed with a pipeline, so watchlisted_at/media_type
+		// use $ifNull to only take effect when the document is first created.
+		set := bson.M{
+			"updated_at":     now,
+			"watched_at":     bson.M{"$ifNull": bson.A{"$watched_at", now}},
+			"watchlisted_at": bson.M{"$ifNull": bson.A{"$watchlisted_at", now}},
+			"media_type":     bson.M{"$ifNull": bson.A{"$media_type", "movie"}},
 		}
+		if req.Rating != nil {
+			set["rating"] = *req.Rating
+		}
+		update = mongo.Pipeline{bson.D{{Key: "$set", Value: set}}}
 	} else {
+		set := bson.M{"updated_at": now}
+		if req.Rating != nil {
+			set["rating"] = *req.Rating
+		}
 		update = bson.M{
 			"$set":         set,
 			"$unset":       bson.M{"watched_at": ""},
