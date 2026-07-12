@@ -18,6 +18,8 @@ import (
 	"github.com/peera/movizius-go-service/internal/shared/middleware"
 	"github.com/peera/movizius-go-service/internal/shared/response"
 	"github.com/peera/movizius-go-service/internal/tv"
+	"github.com/peera/movizius-go-service/internal/user"
+	"github.com/peera/movizius-go-service/pkg/auth0"
 	"github.com/peera/movizius-go-service/pkg/cache"
 	"github.com/peera/movizius-go-service/pkg/tmdb"
 	"github.com/peera/movizius-go-service/pkg/tvmaze"
@@ -30,6 +32,7 @@ type Deps struct {
 	JWKS           keyfunc.Keyfunc
 	Auth0IssuerURL string
 	Auth0Audience  string
+	Auth0          *auth0.Client
 	Firebase       *firebase.App
 	TMDB           *tmdb.Client
 	TVMaze         *tvmaze.Client
@@ -66,9 +69,17 @@ func New(deps Deps) http.Handler {
 	movieRepo := movie.NewRepository(deps.DB)
 	tvRepo := tv.NewRepository(deps.DB)
 
-	movie.NewHandler(movie.NewService(movieRepo, deps.TMDB, deps.Cache), deps.Logger).RegisterRoutes(mux, auth)
-	tv.NewHandler(tv.NewService(tvRepo, deps.TMDB, deps.Cache), deps.Logger).RegisterRoutes(mux, auth)
-	notification.NewHandler(notification.NewService(notification.NewRepository(deps.DB), deps.Firebase), deps.Logger).RegisterRoutes(mux, auth)
+	// authSynced wraps auth with a lazy user sync: every authenticated request
+	// upserts/refreshes the caller's user record from Auth0.
+	userService := user.NewService(user.NewRepository(deps.DB), deps.Auth0, deps.Logger)
+	authSynced := func(next http.Handler) http.Handler {
+		return auth(user.SyncMiddleware(userService, deps.Logger)(next))
+	}
+
+	user.NewHandler(userService, deps.Logger).RegisterRoutes(mux, authSynced)
+	movie.NewHandler(movie.NewService(movieRepo, deps.TMDB, deps.Cache), deps.Logger).RegisterRoutes(mux, authSynced)
+	tv.NewHandler(tv.NewService(tvRepo, deps.TMDB, deps.Cache), deps.Logger).RegisterRoutes(mux, authSynced)
+	notification.NewHandler(notification.NewService(notification.NewRepository(deps.DB), deps.Firebase), deps.Logger).RegisterRoutes(mux, authSynced)
 
 	datasync.NewHandler(datasync.NewService(
 		datasync.NewRepository(deps.DB),
@@ -76,7 +87,7 @@ func New(deps Deps) http.Handler {
 		tv.NewSyncService(tvRepo, deps.TMDB),
 		deps.TMDB,
 		deps.TVMaze,
-	), deps.Logger).RegisterRoutes(mux, auth)
+	), deps.Logger).RegisterRoutes(mux, authSynced)
 
 	// Mount the inner mux under /api/. StripPrefix removes /api before the inner
 	// mux sees the path, so features register routes without the base prefix.

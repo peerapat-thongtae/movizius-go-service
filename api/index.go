@@ -7,6 +7,7 @@ import (
 
 	"github.com/peera/movizius-go-service/internal/shared/middleware"
 	"github.com/peera/movizius-go-service/internal/shared/router"
+	pkgauth0 "github.com/peera/movizius-go-service/pkg/auth0"
 	"github.com/peera/movizius-go-service/pkg/cache"
 	"github.com/peera/movizius-go-service/pkg/config"
 	"github.com/peera/movizius-go-service/pkg/database"
@@ -40,12 +41,18 @@ func init() {
 		log.Fatalf("firebase: %v", err)
 	}
 
+	auth0Client, err := pkgauth0.New(context.Background(), cfg.Auth0Domain, cfg.Auth0ClientID, cfg.Auth0ClientSecret)
+	if err != nil {
+		log.Fatalf("auth0: %v", err)
+	}
+
 	app = router.New(router.Deps{
 		DB:             database.DB(client, "moviedb"),
 		Cache:          cache.NewUpstash(cfg.UpstashURL, cfg.UpstashToken),
 		JWKS:           jwks,
 		Auth0IssuerURL: cfg.Auth0IssuerURL,
 		Auth0Audience:  cfg.Auth0Audience,
+		Auth0:          auth0Client,
 		Firebase:       firebaseApp,
 		TMDB:           tmdb.New(cfg.TMDBAccessToken),
 		TVMaze:         tvmaze.New(""),

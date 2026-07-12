@@ -25,6 +25,7 @@ import (
 
 	"github.com/peera/movizius-go-service/internal/shared/middleware"
 	"github.com/peera/movizius-go-service/internal/shared/router"
+	pkgauth0 "github.com/peera/movizius-go-service/pkg/auth0"
 	"github.com/peera/movizius-go-service/pkg/cache"
 	"github.com/peera/movizius-go-service/pkg/config"
 	"github.com/peera/movizius-go-service/pkg/database"
@@ -69,6 +70,13 @@ func main() {
 	}
 	log.Info("firebase initialized")
 
+	auth0Client, err := pkgauth0.New(context.Background(), cfg.Auth0Domain, cfg.Auth0ClientID, cfg.Auth0ClientSecret)
+	if err != nil {
+		log.Error("failed to initialize auth0 management client", "error", err)
+		os.Exit(1)
+	}
+	log.Info("auth0 management client initialized")
+
 	addr := ":" + cfg.Port
 	log.Info("starting server", "addr", addr)
 
@@ -78,6 +86,7 @@ func main() {
 		JWKS:           jwks,
 		Auth0IssuerURL: cfg.Auth0IssuerURL,
 		Auth0Audience:  cfg.Auth0Audience,
+		Auth0:          auth0Client,
 		Firebase:       firebaseApp,
 		TMDB:           tmdb.New(cfg.TMDBAccessToken),
 		TVMaze:         tvmaze.New(""),

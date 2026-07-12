@@ -13,6 +13,9 @@ type Config struct {
 	UpstashToken                 string
 	Auth0IssuerURL               string
 	Auth0Audience                string
+	Auth0Domain                  string
+	Auth0ClientID                string
+	Auth0ClientSecret            string
 	Port                         string
 	FirebaseServiceAccountBase64 string
 	TMDBAccessToken              string
@@ -33,6 +36,9 @@ func Load() (*Config, error) {
 		UpstashToken:                 os.Getenv("UPSTASH_REDIS_REST_TOKEN"),
 		Auth0IssuerURL:               os.Getenv("AUTH0_ISSUER_URL"),
 		Auth0Audience:                os.Getenv("AUTH0_AUDIENCE"),
+		Auth0Domain:                  os.Getenv("AUTH0_DOMAIN"),
+		Auth0ClientID:                os.Getenv("AUTH0_CLIENT_ID"),
+		Auth0ClientSecret:            os.Getenv("AUTH0_CLIENT_SECRET"),
 		Port:                         os.Getenv("PORT"),
 		FirebaseServiceAccountBase64: os.Getenv("FIREBASE_SERVICE_ACCOUNT_BASE64"),
 		TMDBAccessToken:              os.Getenv("TMDB_API_READ_ACCESS_TOKEN"),
@@ -53,6 +59,15 @@ func Load() (*Config, error) {
 	}
 	if cfg.Auth0Audience == "" {
 		return nil, errors.New("AUTH0_AUDIENCE is required")
+	}
+	if cfg.Auth0Domain == "" {
+		return nil, errors.New("AUTH0_DOMAIN is required")
+	}
+	if cfg.Auth0ClientID == "" {
+		return nil, errors.New("AUTH0_CLIENT_ID is required")
+	}
+	if cfg.Auth0ClientSecret == "" {
+		return nil, errors.New("AUTH0_CLIENT_SECRET is required")
 	}
 	if cfg.FirebaseServiceAccountBase64 == "" {
 		return nil, errors.New("FIREBASE_SERVICE_ACCOUNT_BASE64 is required")

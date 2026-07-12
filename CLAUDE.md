@@ -95,9 +95,9 @@ health.NewHandler(health.NewService()).RegisterRoutes(mux)
 Auth0 owns login/registration/token issuance. The API only validates JWTs.
 
 - Identify users by `auth0_user_id` (the `sub` claim, e.g. `auth0|68234abcd1234`). Never use email as a primary identifier.
-- Users are created lazily on first authenticated request: validate token → extract `sub` → upsert user record.
+- Users are created lazily on first authenticated request: `internal/user`'s `SyncMiddleware` upserts a `user` document (keyed by `identities.auth0Id`) on every authenticated request, fetching profile data (email/name/avatar) from the Auth0 Management API on first login. `GET /user/me` and `POST /user/sync` expose explicit fetch/refresh.
 - All protected endpoints must validate: issuer (`iss`), audience (`aud`), expiration (`exp`), signature (Auth0 JWKS).
-- Auth middleware (`internal/shared/middleware/auth.go`, to be implemented) reads `Authorization: Bearer`, validates, stores claims in request context.
+- Auth middleware (`internal/shared/middleware/auth.go`) reads `Authorization: Bearer`, validates, stores the `sub` claim in request context via `middleware.RequireAuth`/`UserIDFromContext`. Router composes it with `user.SyncMiddleware` into `authSynced` for all protected routes.
 - All watchlist/rating/history/recommendation operations must scope by `auth0_user_id` from the JWT — never from the request payload.
 
 ## Domain Rules
