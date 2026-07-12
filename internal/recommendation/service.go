@@ -273,6 +273,7 @@ func (s *Service) GetMovieAffinity(ctx context.Context, userID string) (movie.Mo
 		Directors:           bucketScores(profile.Movie.Directors),
 		Collections:         bucketScores(profile.Movie.Collections),
 		ProductionCompanies: bucketScores(profile.Movie.ProductionCompanies),
+		WatchedIDs:          profile.Movie.WatchedIDs,
 	}, nil
 }
 

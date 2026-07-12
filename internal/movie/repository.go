@@ -30,6 +30,28 @@ type MovieRepository interface {
 	UpdateProfileContribution(ctx context.Context, userID string, movieID int64, c ProfileContribution) error
 	// FindAllMovieUserDocs returns every movie_user doc (for recommendation profile full recompute).
 	FindAllMovieUserDocs(ctx context.Context) ([]MovieUser, error)
+	// FindRecommendationCandidates returns cached movies matching at least one
+	// of the given entity ids (OR across non-empty buckets), excluding
+	// excludeIDs, capped at limit. Returns (nil, nil) when every criteria
+	// list is empty (nothing to match against).
+	FindRecommendationCandidates(ctx context.Context, criteria RecommendationCriteria, excludeIDs []int64, limit int) ([]Movie, error)
+}
+
+// RecommendationCriteria carries the entity ids to match candidates against,
+// one list per bucket used in the recommendation profile.
+type RecommendationCriteria struct {
+	GenreIDs      []int64
+	KeywordIDs    []int64
+	CastIDs       []int64
+	DirectorIDs   []int64
+	CollectionIDs []int64
+	CompanyIDs    []int64
+}
+
+// empty reports whether every bucket in the criteria is empty.
+func (c RecommendationCriteria) empty() bool {
+	return len(c.GenreIDs) == 0 && len(c.KeywordIDs) == 0 && len(c.CastIDs) == 0 &&
+		len(c.DirectorIDs) == 0 && len(c.CollectionIDs) == 0 && len(c.CompanyIDs) == 0
 }
 
 type mongoMovieRepository struct {
@@ -144,6 +166,49 @@ func (r *mongoMovieRepository) FindAllMovieUserDocs(ctx context.Context) ([]Movi
 	results := []MovieUser{}
 	if err := cursor.All(ctx, &results); err != nil {
 		return nil, fmt.Errorf("movie: decode all movie_user docs: %w", err)
+	}
+	return results, nil
+}
+
+func (r *mongoMovieRepository) FindRecommendationCandidates(ctx context.Context, criteria RecommendationCriteria, excludeIDs []int64, limit int) ([]Movie, error) {
+	if criteria.empty() {
+		return nil, nil
+	}
+
+	var or bson.A
+	if len(criteria.GenreIDs) > 0 {
+		or = append(or, bson.M{"genres": bson.M{"$in": criteria.GenreIDs}})
+	}
+	if len(criteria.KeywordIDs) > 0 {
+		or = append(or, bson.M{"keywords": bson.M{"$in": criteria.KeywordIDs}})
+	}
+	if len(criteria.CastIDs) > 0 {
+		or = append(or, bson.M{"cast_ids": bson.M{"$in": criteria.CastIDs}})
+	}
+	if len(criteria.DirectorIDs) > 0 {
+		or = append(or, bson.M{"director_id": bson.M{"$in": criteria.DirectorIDs}})
+	}
+	if len(criteria.CollectionIDs) > 0 {
+		or = append(or, bson.M{"collection_id": bson.M{"$in": criteria.CollectionIDs}})
+	}
+	if len(criteria.CompanyIDs) > 0 {
+		or = append(or, bson.M{"production_companies": bson.M{"$in": criteria.CompanyIDs}})
+	}
+
+	filter := bson.M{"$or": or}
+	if len(excludeIDs) > 0 {
+		filter["id"] = bson.M{"$nin": excludeIDs}
+	}
+
+	cursor, err := r.db.Collection("movie").Find(ctx, filter, options.Find().SetLimit(int64(limit)))
+	if err != nil {
+		return nil, fmt.Errorf("movie: find recommendation candidates: %w", err)
+	}
+	defer cursor.Close(ctx)
+
+	results := []Movie{}
+	if err := cursor.All(ctx, &results); err != nil {
+		return nil, fmt.Errorf("movie: decode recommendation candidates: %w", err)
 	}
 	return results, nil
 }

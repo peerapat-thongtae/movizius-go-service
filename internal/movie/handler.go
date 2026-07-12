@@ -30,6 +30,7 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux, auth func(http.Handler) htt
 	mux.Handle("POST /movie", auth(http.HandlerFunc(h.UpsertState)))
 	mux.Handle("GET /movie/states", auth(http.HandlerFunc(h.GetStates)))
 	mux.Handle("GET /movie/discover", auth(http.HandlerFunc(h.Discover)))
+	mux.Handle("GET /movie/recommendations", auth(http.HandlerFunc(h.Recommendations)))
 	mux.Handle("GET /movie/search", auth(http.HandlerFunc(h.Search)))
 	mux.Handle("GET /movie/random", auth(http.HandlerFunc(h.Random)))
 	mux.Handle("GET /movie/trending", auth(http.HandlerFunc(h.Trending)))
@@ -142,10 +143,10 @@ func (h *Handler) GetStates(w http.ResponseWriter, r *http.Request) {
 }
 
 // Random returns a page of movies the user hasn't watchlisted/watched yet,
-// sampled from TMDB's trending pool, biased toward the user's recommendation profile.
+// sampled from TMDB's trending pool.
 //
 //	@Summary		Random movie suggestions
-//	@Description	Returns movies the user has no watchlist/watched record for, sampled from TMDB's trending pool (already filtered through the same acceptability rules as /trending) and excluding recently-served titles. Sampling is weighted by the user's recommendation profile (liked genres/keywords/cast/director/collection/production companies score higher) while remaining randomized on every call.
+//	@Description	Returns movies the user has no watchlist/watched record for, sampled by shuffling TMDB's trending pool (already filtered through the same acceptability rules as /trending) and excluding recently-served titles. Results are randomized on every call.
 //	@Tags			movies
 //	@Produce		json
 //	@Security		BearerAuth
@@ -323,6 +324,49 @@ func (h *Handler) Discover(w http.ResponseWriter, r *http.Request) {
 
 	response.Success(w, http.StatusOK, response.Page[MovieResponse]{
 		Page:         q.Page,
+		TotalResults: total,
+		TotalPages:   totalPages,
+		Results:      results,
+	})
+}
+
+// Recommendations returns a paginated list of movies ranked by how well they
+// match the authenticated user's recommendation profile.
+//
+//	@Summary		Personalized movie recommendations
+//	@Description	Returns movies from the local cache sampled from candidates matching the user's recommendation profile (liked genres/keywords/cast/director/collection/production companies), excluding titles the profile already counts as watched. Ordering is randomized but biased toward higher-affinity titles, so repeated calls don't return the exact same order every time. An empty result means there isn't enough profile data yet.
+//	@Tags			movies
+//	@Produce		json
+//	@Security		BearerAuth
+//	@Param			page	query		int	false	"Page number (default 1)"
+//	@Success		200		{object}	response.Page[movie.MovieResponse]
+//	@Failure		401		{object}	map[string]string
+//	@Failure		500		{object}	map[string]string
+//	@Router			/movie/recommendations [get]
+func (h *Handler) Recommendations(w http.ResponseWriter, r *http.Request) {
+	userID, ok := middleware.UserIDFromContext(r.Context())
+	if !ok {
+		response.Error(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
+	page := intParam(r.URL.Query().Get("page"), 1)
+	if page < 1 {
+		page = 1
+	}
+
+	results, total, err := h.service.Recommendations(r.Context(), userID, page)
+	if err != nil {
+		h.log.Error("failed to get movie recommendations", "error", err, "user", userID, "path", r.URL.Path)
+		response.Error(w, http.StatusInternalServerError, "failed to get movie recommendations")
+		return
+	}
+
+	const pageSize = 20
+	totalPages := max(1, (total+pageSize-1)/pageSize)
+
+	response.Success(w, http.StatusOK, response.Page[MovieResponse]{
+		Page:         page,
 		TotalResults: total,
 		TotalPages:   totalPages,
 		Results:      results,

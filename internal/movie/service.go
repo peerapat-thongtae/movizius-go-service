@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math/rand"
 	"sync"
 	"time"
 
@@ -28,11 +29,20 @@ const randomMaxPages = 5
 // randomTimeWindow is the trending time window Random samples from.
 const randomTimeWindow = "day"
 
+// recommendationsPageSize is the fixed page size for /movie/recommendations,
+// matching Discover's default page size.
+const recommendationsPageSize = 20
+
+// recommendationCandidateLimit bounds how many candidate documents are
+// fetched from the local cache and scored in Go per request.
+const recommendationCandidateLimit = 300
+
 // MovieAffinity holds a user's recommendation-profile scores (-100..100) for
 // the entity buckets relevant to ranking movie candidates, keyed by TMDB
-// entity id. Defined here (rather than imported from the recommendation
-// package) to avoid a cyclic dependency — recommendation already imports
-// movie for its repository/model types.
+// entity id, plus the profile's watched-titles exclusion list. Defined here
+// (rather than imported from the recommendation package) to avoid a cyclic
+// dependency — recommendation already imports movie for its
+// repository/model types.
 type MovieAffinity struct {
 	Genres              map[int64]int
 	Keywords            map[int64]int
@@ -40,13 +50,15 @@ type MovieAffinity struct {
 	Directors           map[int64]int
 	Collections         map[int64]int
 	ProductionCompanies map[int64]int
+	WatchedIDs          []int64
 }
 
 // RecommendationUpdater is the narrow interface MovieService uses to trigger
 // a recommendation-profile update after a state change and to read back a
-// user's affinity scores for ranking, without importing the recommendation
-// package's concrete type. Errors from ApplyMovieStateChange are handled
-// internally by the implementation — it never fails the caller's request.
+// user's affinity scores for the /movie/recommendations endpoint, without
+// importing the recommendation package's concrete type. Errors from
+// ApplyMovieStateChange are handled internally by the implementation — it
+// never fails the caller's request.
 type RecommendationUpdater interface {
 	ApplyMovieStateChange(ctx context.Context, userID string, movieID int64)
 	GetMovieAffinity(ctx context.Context, userID string) (MovieAffinity, error)
@@ -118,11 +130,23 @@ func (s *MovieService) Discover(ctx context.Context, userID string, q DiscoverQu
 		return []MovieResponse{}, total, nil
 	}
 
-	// Load cached DB records so they can override TMDB detail (DB is the source of
-	// truth for the fields it stores). Read-only during the fan-out below.
+	results, err := s.enrichMovieIDs(ctx, ids)
+	if err != nil {
+		return nil, 0, err
+	}
+	return results, total, nil
+}
+
+// enrichMovieIDs fetches full TMDB detail for each id in parallel, then
+// overlays cached DB fields (the DB is the source of truth for the fields it
+// stores — popularity, vote_average/vote_count, and the stored catalog
+// fields). Shared by Discover and Recommendations.
+func (s *MovieService) enrichMovieIDs(ctx context.Context, ids []int64) ([]MovieResponse, error) {
+	// Load cached DB records so they can override TMDB detail. Read-only
+	// during the fan-out below.
 	cached, err := s.repo.FindByTMDBIDs(ctx, ids)
 	if err != nil {
-		return nil, 0, fmt.Errorf("movie service: fetch cached movies: %w", err)
+		return nil, fmt.Errorf("movie service: fetch cached movies: %w", err)
 	}
 
 	results := make([]MovieResponse, len(ids))
@@ -153,22 +177,98 @@ func (s *MovieService) Discover(ctx context.Context, userID string, q DiscoverQu
 
 	for _, err := range errs {
 		if err != nil {
-			return nil, 0, fmt.Errorf("movie service: enrich from tmdb: %w", err)
+			return nil, fmt.Errorf("movie service: enrich from tmdb: %w", err)
 		}
 	}
 
+	return results, nil
+}
+
+// Recommendations returns a page of movies sampled from candidates matching
+// the authenticated user's recommendation profile (liked genres/keywords/
+// cast/director/collection/production companies), excluding titles the
+// profile already counts as watched. Ordering is randomized but biased
+// toward higher-affinity candidates (see weightedRank), so repeated calls
+// don't return the exact same order/page every time. Returns an empty result
+// (not an error) when no recommendation service is wired or the user has no
+// positive profile signal yet — callers should treat that as "not enough
+// data", the same as a cold-start user; this endpoint intentionally does not
+// fall back to trending/popular titles.
+func (s *MovieService) Recommendations(ctx context.Context, userID string, page int) ([]MovieResponse, int, error) {
+	if s.recommendation == nil {
+		return []MovieResponse{}, 0, nil
+	}
+
+	aff, err := s.recommendation.GetMovieAffinity(ctx, userID)
+	if err != nil {
+		return nil, 0, fmt.Errorf("movie service: get movie affinity: %w", err)
+	}
+
+	criteria := RecommendationCriteria{
+		GenreIDs:      positiveScoreIDs(aff.Genres),
+		KeywordIDs:    positiveScoreIDs(aff.Keywords),
+		CastIDs:       positiveScoreIDs(aff.Actors),
+		DirectorIDs:   positiveScoreIDs(aff.Directors),
+		CollectionIDs: positiveScoreIDs(aff.Collections),
+		CompanyIDs:    positiveScoreIDs(aff.ProductionCompanies),
+	}
+	if criteria.empty() {
+		return []MovieResponse{}, 0, nil
+	}
+
+	candidates, err := s.repo.FindRecommendationCandidates(ctx, criteria, aff.WatchedIDs, recommendationCandidateLimit)
+	if err != nil {
+		return nil, 0, fmt.Errorf("movie service: find recommendation candidates: %w", err)
+	}
+
+	scored := make([]Movie, 0, len(candidates))
+	for _, m := range candidates {
+		if isAcceptableMovieDoc(m) {
+			scored = append(scored, m)
+		}
+	}
+	scored = weightedRank(scored, aff)
+
+	total := len(scored)
+	start := (page - 1) * recommendationsPageSize
+	if start >= total {
+		return []MovieResponse{}, total, nil
+	}
+	end := start + recommendationsPageSize
+	if end > total {
+		end = total
+	}
+
+	pageIDs := make([]int64, end-start)
+	for i, m := range scored[start:end] {
+		pageIDs[i] = m.MovieID
+	}
+
+	results, err := s.enrichMovieIDs(ctx, pageIDs)
+	if err != nil {
+		return nil, 0, err
+	}
 	return results, total, nil
 }
 
+// positiveScoreIDs returns the entity ids with a positive score — only
+// entities the user actually likes are worth matching candidates against.
+func positiveScoreIDs(scores map[int64]int) []int64 {
+	ids := make([]int64, 0, len(scores))
+	for id, score := range scores {
+		if score > 0 {
+			ids = append(ids, id)
+		}
+	}
+	return ids
+}
+
 // Random returns up to total movies the user hasn't tracked yet (per withoutStatus),
-// sampled from TMDB's trending pool (day window, already filtered through
+// sampled by shuffling TMDB's trending pool (day window, already filtered through
 // isAcceptableMovie via Trending). Trending is paged (up to randomMaxPages) until
 // enough untracked, unseen candidates are gathered or trending is exhausted. Ids
 // served recently (see the Redis "seen" cache) are excluded so consecutive calls
-// don't repeat the same titles. When a recommendation profile is available,
-// sampling is biased toward candidates matching the user's liked genres,
-// keywords, cast, director, collection and production companies — still
-// randomized, but weighted rather than uniform.
+// don't repeat the same titles.
 func (s *MovieService) Random(ctx context.Context, userID string, total int, withoutStatus []string) ([]MovieResponse, error) {
 	seenIDs := s.loadSeenIDs(ctx, userID)
 	seenSet := make(map[int64]struct{}, len(seenIDs))
@@ -179,16 +279,6 @@ func (s *MovieService) Random(ctx context.Context, userID string, total int, wit
 	excludeSet, err := s.trackedExcludeIDs(ctx, userID, withoutStatus)
 	if err != nil {
 		return nil, err
-	}
-
-	affinity := MovieAffinity{}
-	if s.recommendation != nil {
-		affinity, err = s.recommendation.GetMovieAffinity(ctx, userID)
-		if err != nil {
-			// Personalization is best-effort — fall back to an empty (neutral)
-			// affinity rather than failing the request.
-			affinity = MovieAffinity{}
-		}
 	}
 
 	pool := make([]MovieResponse, 0, total)
@@ -217,7 +307,10 @@ func (s *MovieService) Random(ctx context.Context, userID string, total int, wit
 		}
 	}
 
-	pool = weightedSample(pool, affinity, total)
+	rand.Shuffle(len(pool), func(i, j int) { pool[i], pool[j] = pool[j], pool[i] })
+	if len(pool) > total {
+		pool = pool[:total]
+	}
 
 	ids := make([]int64, len(pool))
 	for i, m := range pool {
