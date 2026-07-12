@@ -13,7 +13,7 @@ import (
 	"github.com/peera/movizius-go-service/pkg/tmdb"
 )
 
-const appendToResponse = "credits,videos,watch/providers,external_ids"
+const appendToResponse = "credits,videos,watch/providers,external_ids,keywords"
 
 // randomSeenTTL is how long a served TV id stays excluded from that user's
 // future /tv/random calls. Rolling: refreshed on every call.
@@ -29,16 +29,25 @@ const randomMaxPages = 5
 // randomTimeWindow is the trending time window Random samples from.
 const randomTimeWindow = "day"
 
+// RecommendationUpdater is the narrow interface TVService uses to trigger a
+// recommendation-profile update after a state change, without importing the
+// recommendation package's concrete type. Errors are handled internally by
+// the implementation — this never fails the caller's request.
+type RecommendationUpdater interface {
+	ApplyTVStateChange(ctx context.Context, userID string, tvID int64)
+}
+
 // TVService holds the business logic for the TV feature.
 type TVService struct {
-	repo  TVRepository
-	tmdb  *tmdb.Client
-	cache cache.Cache
+	repo           TVRepository
+	tmdb           *tmdb.Client
+	cache          cache.Cache
+	recommendation RecommendationUpdater
 }
 
 // NewService constructs a TVService.
-func NewService(repo TVRepository, tmdb *tmdb.Client, c cache.Cache) *TVService {
-	return &TVService{repo: repo, tmdb: tmdb, cache: c}
+func NewService(repo TVRepository, tmdb *tmdb.Client, c cache.Cache, rec RecommendationUpdater) *TVService {
+	return &TVService{repo: repo, tmdb: tmdb, cache: c, recommendation: rec}
 }
 
 func randomSeenKey(userID string) string {
@@ -422,7 +431,13 @@ func (s *TVService) UpsertTVState(ctx context.Context, userID string, req Upsert
 	}
 
 	if req.Status == "watchlist" {
-		return s.repo.UpsertTVState(ctx, userID, req.ID, nil, req.Rating)
+		if err := s.repo.UpsertTVState(ctx, userID, req.ID, nil, req.Rating); err != nil {
+			return err
+		}
+		if s.recommendation != nil {
+			s.recommendation.ApplyTVStateChange(ctx, userID, req.ID)
+		}
+		return nil
 	}
 
 	// Fetch show summary to get the season list.
@@ -486,7 +501,13 @@ func (s *TVService) UpsertTVState(ctx context.Context, userID string, req Upsert
 		allEpisodes = append(allEpisodes, r.episodes...)
 	}
 
-	return s.repo.UpsertTVState(ctx, userID, req.ID, allEpisodes, req.Rating)
+	if err := s.repo.UpsertTVState(ctx, userID, req.ID, allEpisodes, req.Rating); err != nil {
+		return err
+	}
+	if s.recommendation != nil {
+		s.recommendation.ApplyTVStateChange(ctx, userID, req.ID)
+	}
+	return nil
 }
 
 // UpsertEpisodes adds specific episodes to the user's TV watch history.
@@ -534,7 +555,13 @@ func (s *TVService) UpsertEpisodes(ctx context.Context, userID string, req Upser
 		}
 	}
 
-	return s.repo.UpsertEpisodes(ctx, userID, req)
+	if err := s.repo.UpsertEpisodes(ctx, userID, req); err != nil {
+		return err
+	}
+	if s.recommendation != nil {
+		s.recommendation.ApplyTVStateChange(ctx, userID, req.ID)
+	}
+	return nil
 }
 
 // GetStates returns aggregated TV tracking records for the given user.

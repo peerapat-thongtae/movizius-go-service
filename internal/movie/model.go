@@ -27,6 +27,9 @@ type Movie struct {
 	VoteAverage         *float64           `bson:"vote_average"                 json:"vote_average"`
 	VoteCount           *int64             `bson:"vote_count"                   json:"vote_count"`
 	WatchProviders      []int64            `bson:"watch_providers"              json:"watch_providers"`
+	Keywords            []int64            `bson:"keywords"                     json:"keywords"`
+	CastIDs             []int64            `bson:"cast_ids"                     json:"cast_ids"`
+	DirectorID          *int64             `bson:"director_id,omitempty"        json:"director_id,omitempty"`
 	UpdatedAt           time.Time          `bson:"updated_at"                   json:"-"`
 }
 
@@ -41,4 +44,18 @@ type MovieUser struct {
 	UpdatedAt     time.Time          `bson:"updated_at"               json:"-"`
 	AccountStatus *string            `bson:"account_status,omitempty" json:"account_status,omitempty"`
 	Rating        *float64           `bson:"rating,omitempty"         json:"rating,omitempty"`
+
+	// ProfileContribution snapshots the recommendation-profile contribution
+	// last derived from this doc's state, so a later state change (rating
+	// edit, un-watch) can be applied to the profile as a delta instead of a
+	// blind re-add, avoiding double counting.
+	ProfileContribution *ProfileContribution `bson:"profile_contribution,omitempty" json:"-"`
+}
+
+// ProfileContribution is the recommendation profile bookkeeping snapshot
+// stored on a MovieUser doc (see recommendationProfile feature).
+type ProfileContribution struct {
+	Contribution float64 `bson:"contribution"`
+	Applied      bool    `bson:"applied"`
+	Version      int     `bson:"version"`
 }

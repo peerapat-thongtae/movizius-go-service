@@ -42,6 +42,7 @@ type MovieResponse struct {
 	MediaType           string                `bson:"media_type"             json:"media_type,omitempty"`
 	WatchProviders      *WatchProviderCountry `bson:"watch_providers"        json:"watch_providers"`
 	ReleaseDateTH       string                `bson:"release_date_th"        json:"release_date_th"`
+	Keywords            *KeywordsWrapper      `bson:"keywords"               json:"keywords"`
 	UpdatedAt           time.Time             `bson:"updated_at"             json:"-"`
 }
 
@@ -89,6 +90,17 @@ type Collection struct {
 }
 
 type Genre struct {
+	ID   int64  `bson:"id"   json:"id"`
+	Name string `bson:"name" json:"name"`
+}
+
+// KeywordsWrapper mirrors TMDB movie detail's "keywords" append_to_response shape:
+// {"keywords":[{"id":..,"name":..}]}.
+type KeywordsWrapper struct {
+	Keywords []Keyword `bson:"keywords" json:"keywords"`
+}
+
+type Keyword struct {
 	ID   int64  `bson:"id"   json:"id"`
 	Name string `bson:"name" json:"name"`
 }

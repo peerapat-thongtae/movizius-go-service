@@ -81,7 +81,15 @@ type TVResponse struct {
 	ImdbID              string                `bson:"imdb_id"                json:"imdb_id,omitempty"`
 	IsAnime             bool                  `bson:"is_anime"               json:"is_anime"`
 	WatchProviders      *WatchProviderCountry `bson:"watch_providers"        json:"watch_providers"`
+	Keywords            *TVKeywordsWrapper    `bson:"keywords"               json:"keywords"`
 	UpdatedAt           time.Time             `bson:"updated_at"             json:"-"`
+}
+
+// TVKeywordsWrapper mirrors TMDB TV detail's "keywords" append_to_response
+// shape: {"results":[{"id":..,"name":..}]} (note: "results", not "keywords" —
+// different from the movie endpoint's shape).
+type TVKeywordsWrapper struct {
+	Results []Keyword `bson:"results" json:"results"`
 }
 
 // StateEpisode is a trimmed episode shape used in TVStateResponse (last/next episode to air).
@@ -154,6 +162,11 @@ type CreatedBy struct {
 }
 
 type Genre struct {
+	ID   int64  `bson:"id"   json:"id"`
+	Name string `bson:"name" json:"name"`
+}
+
+type Keyword struct {
 	ID   int64  `bson:"id"   json:"id"`
 	Name string `bson:"name" json:"name"`
 }

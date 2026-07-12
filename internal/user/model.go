@@ -5,6 +5,8 @@ import (
 
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
+
+	"github.com/peera/movizius-go-service/internal/recommendation"
 )
 
 // Identity links a local user record to an Auth0 identity (one per connection/provider).
@@ -25,14 +27,14 @@ type User struct {
 	// Auth0ID is the sub claim from the token that created this record —
 	// the same value other collections (movie_user, tv_user, notification
 	// devices, ...) store as user_id, so it's the natural join key.
-	Auth0ID               string     `bson:"id"                     json:"id"`
-	Identities            []Identity `bson:"identities"             json:"identities"`
-	Email                 string     `bson:"email"                  json:"email"`
-	Profile               Profile    `bson:"profile"                json:"profile"`
-	Preferences           bson.M     `bson:"preferences"            json:"preferences"`
-	RecommendationProfile bson.M     `bson:"recommendationProfile"  json:"recommendationProfile"`
-	Status                string     `bson:"status"                 json:"status"`
-	CreatedAt             time.Time  `bson:"createdAt"              json:"createdAt"`
-	UpdatedAt             time.Time  `bson:"updatedAt"              json:"updatedAt"`
-	LastLoginAt           time.Time  `bson:"lastLoginAt"            json:"lastLoginAt"`
+	Auth0ID               string                 `bson:"id"                     json:"id"`
+	Identities            []Identity             `bson:"identities"             json:"identities"`
+	Email                 string                 `bson:"email"                  json:"email"`
+	Profile               Profile                `bson:"profile"                json:"profile"`
+	Preferences           bson.M                 `bson:"preferences"            json:"preferences"`
+	RecommendationProfile recommendation.Profile `bson:"recommendationProfile"  json:"recommendationProfile"`
+	Status                string                 `bson:"status"                 json:"status"`
+	CreatedAt             time.Time              `bson:"createdAt"              json:"createdAt"`
+	UpdatedAt             time.Time              `bson:"updatedAt"              json:"updatedAt"`
+	LastLoginAt           time.Time              `bson:"lastLoginAt"            json:"lastLoginAt"`
 }

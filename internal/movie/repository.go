@@ -2,6 +2,7 @@ package movie
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -23,6 +24,12 @@ type MovieRepository interface {
 	DeleteByTMDBID(ctx context.Context, id int64) error
 	ReconcilePopularity(ctx context.Context, export map[int64]float64, maxDeleteRatio float64) (ReconcileResult, error)
 	PruneUnacceptableUntracked(ctx context.Context, dryRun bool) ([]int64, error)
+	// FindOne returns a single user's tracking doc for a movie, or (nil, nil) if none exists.
+	FindOne(ctx context.Context, userID string, movieID int64) (*MovieUser, error)
+	// UpdateProfileContribution persists the recommendation-profile snapshot for a user's movie doc.
+	UpdateProfileContribution(ctx context.Context, userID string, movieID int64, c ProfileContribution) error
+	// FindAllMovieUserDocs returns every movie_user doc (for recommendation profile full recompute).
+	FindAllMovieUserDocs(ctx context.Context) ([]MovieUser, error)
 }
 
 type mongoMovieRepository struct {
@@ -104,6 +111,41 @@ func (r *mongoMovieRepository) UpsertState(ctx context.Context, userID string, r
 		return fmt.Errorf("movie: upsert state: %w", err)
 	}
 	return nil
+}
+
+func (r *mongoMovieRepository) FindOne(ctx context.Context, userID string, movieID int64) (*MovieUser, error) {
+	var m MovieUser
+	err := r.db.Collection("movie_user").FindOne(ctx, bson.M{"id": movieID, "user_id": userID}).Decode(&m)
+	if errors.Is(err, mongo.ErrNoDocuments) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("movie: find one %d/%s: %w", movieID, userID, err)
+	}
+	return &m, nil
+}
+
+func (r *mongoMovieRepository) UpdateProfileContribution(ctx context.Context, userID string, movieID int64, c ProfileContribution) error {
+	filter := bson.M{"id": movieID, "user_id": userID}
+	update := bson.M{"$set": bson.M{"profile_contribution": c}}
+	if _, err := r.db.Collection("movie_user").UpdateOne(ctx, filter, update); err != nil {
+		return fmt.Errorf("movie: update profile contribution %d/%s: %w", movieID, userID, err)
+	}
+	return nil
+}
+
+func (r *mongoMovieRepository) FindAllMovieUserDocs(ctx context.Context) ([]MovieUser, error) {
+	cursor, err := r.db.Collection("movie_user").Find(ctx, bson.M{})
+	if err != nil {
+		return nil, fmt.Errorf("movie: find all movie_user docs: %w", err)
+	}
+	defer cursor.Close(ctx)
+
+	results := []MovieUser{}
+	if err := cursor.All(ctx, &results); err != nil {
+		return nil, fmt.Errorf("movie: decode all movie_user docs: %w", err)
+	}
+	return results, nil
 }
 
 func (r *mongoMovieRepository) DeleteByTMDBID(ctx context.Context, id int64) error {

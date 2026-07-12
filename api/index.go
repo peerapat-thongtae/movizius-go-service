@@ -5,6 +5,7 @@ import (
 	"log"
 	"net/http"
 
+	"github.com/peera/movizius-go-service/internal/recommendation"
 	"github.com/peera/movizius-go-service/internal/shared/middleware"
 	"github.com/peera/movizius-go-service/internal/shared/router"
 	pkgauth0 "github.com/peera/movizius-go-service/pkg/auth0"
@@ -58,6 +59,17 @@ func init() {
 		TVMaze:         tvmaze.New(""),
 		Logger:         logger.New(),
 		Development:    cfg.IsDevelopment(),
+		RecommendationConfig: recommendation.Config{
+			HalfLifeDays:        cfg.RecHalfLifeDays,
+			RewatchBonusK:       cfg.RecRewatchBonusK,
+			LeadActorMultiplier: cfg.RecLeadActorMultiplier,
+			ActorMultiplier:     cfg.RecActorMultiplier,
+			DirectorMultiplier:  cfg.RecDirectorMultiplier,
+			CreatorMultiplier:   cfg.RecCreatorMultiplier,
+			PruneMinCount:       cfg.RecPruneMinCount,
+			PruneMaxAbsScore:    cfg.RecPruneMaxAbsScore,
+			BucketCap:           cfg.RecBucketCap,
+		},
 	})
 }
 

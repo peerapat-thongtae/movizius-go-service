@@ -1,6 +1,65 @@
 package tv
 
-import "time"
+import (
+	"sort"
+	"time"
+)
+
+// topCastN is the number of top-billed cast members kept for the
+// recommendation profile's actor bucket.
+const topCastN = 5
+
+// topCastIDs returns up to n cast member ids ordered by billing (Order
+// ascending); cast members with no Order are placed last.
+func topCastIDs(c *Credits, n int) []int64 {
+	if c == nil || len(c.Cast) == 0 {
+		return nil
+	}
+	sorted := make([]CastMember, len(c.Cast))
+	copy(sorted, c.Cast)
+	sort.SliceStable(sorted, func(i, j int) bool {
+		oi, oj := sorted[i].Order, sorted[j].Order
+		if oi == nil {
+			return false
+		}
+		if oj == nil {
+			return true
+		}
+		return *oi < *oj
+	})
+	if len(sorted) > n {
+		sorted = sorted[:n]
+	}
+	ids := make([]int64, len(sorted))
+	for i, m := range sorted {
+		ids[i] = m.ID
+	}
+	return ids
+}
+
+// creatorIDs flattens a TV series' created_by list into TMDB person ids.
+func creatorIDs(cb []CreatedBy) []int64 {
+	if len(cb) == 0 {
+		return nil
+	}
+	ids := make([]int64, len(cb))
+	for i, c := range cb {
+		ids[i] = c.ID
+	}
+	return ids
+}
+
+// tvKeywordIDs flattens a TV series' keywords wrapper into TMDB keyword ids.
+func tvKeywordIDs(k *TVKeywordsWrapper) []int64 {
+	if k == nil {
+		return nil
+	}
+	ids := make([]int64, len(k.Results))
+	for i, kw := range k.Results {
+		ids[i] = kw.ID
+	}
+	return ids
+}
 
 // tvToModel maps a TVResponse (TMDB API shape) to a TV (DB model),
 // handling type conversions. Fields owned by another sync (vote_average,
@@ -43,6 +102,9 @@ func tvToModel(data TVResponse, now time.Time) TV {
 		Popularity:          &data.Popularity,
 		Genres:              genres,
 		ProductionCompanies: companies,
+		Keywords:            tvKeywordIDs(data.Keywords),
+		CastIDs:             topCastIDs(data.Credits, topCastN),
+		CreatorIDs:          creatorIDs(data.CreatedBy),
 		Seasons:             seasons,
 		LastEpisodeToAir:    data.LastEpisodeToAir,
 		NextEpisodeToAir:    data.NextEpisodeToAir,

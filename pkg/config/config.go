@@ -4,6 +4,7 @@ package config
 import (
 	"errors"
 	"os"
+	"strconv"
 )
 
 // Config holds all application configuration loaded from the environment.
@@ -20,6 +21,17 @@ type Config struct {
 	FirebaseServiceAccountBase64 string
 	TMDBAccessToken              string
 	NodeEnv                      string
+
+	// Recommendation profile scoring tunables — all optional, defaulted below.
+	RecHalfLifeDays        float64
+	RecRewatchBonusK       float64
+	RecLeadActorMultiplier float64
+	RecActorMultiplier     float64
+	RecDirectorMultiplier  float64
+	RecCreatorMultiplier   float64
+	RecPruneMinCount       int
+	RecPruneMaxAbsScore    int
+	RecBucketCap           int
 }
 
 // IsDevelopment reports whether the service is running in the development environment.
@@ -80,5 +92,41 @@ func Load() (*Config, error) {
 		cfg.Port = "8080"
 	}
 
+	cfg.RecHalfLifeDays = getEnvFloat("REC_HALF_LIFE_DAYS", 90)
+	cfg.RecRewatchBonusK = getEnvFloat("REC_REWATCH_BONUS_K", 0.3)
+	cfg.RecLeadActorMultiplier = getEnvFloat("REC_LEAD_ACTOR_MULTIPLIER", 1.2)
+	cfg.RecActorMultiplier = getEnvFloat("REC_ACTOR_MULTIPLIER", 1.0)
+	cfg.RecDirectorMultiplier = getEnvFloat("REC_DIRECTOR_MULTIPLIER", 1.2)
+	cfg.RecCreatorMultiplier = getEnvFloat("REC_CREATOR_MULTIPLIER", 1.2)
+	cfg.RecPruneMinCount = getEnvInt("REC_PRUNE_MIN_COUNT", 2)
+	cfg.RecPruneMaxAbsScore = getEnvInt("REC_PRUNE_MAX_ABS_SCORE", 10)
+	cfg.RecBucketCap = getEnvInt("REC_BUCKET_CAP", 100)
+
 	return cfg, nil
+}
+
+// getEnvFloat reads a float64 env var, falling back to def if unset or unparseable.
+func getEnvFloat(key string, def float64) float64 {
+	raw := os.Getenv(key)
+	if raw == "" {
+		return def
+	}
+	v, err := strconv.ParseFloat(raw, 64)
+	if err != nil {
+		return def
+	}
+	return v
+}
+
+// getEnvInt reads an int env var, falling back to def if unset or unparseable.
+func getEnvInt(key string, def int) int {
+	raw := os.Getenv(key)
+	if raw == "" {
+		return def
+	}
+	v, err := strconv.Atoi(raw)
+	if err != nil {
+		return def
+	}
+	return v
 }

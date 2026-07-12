@@ -1,6 +1,68 @@
 package movie
 
-import "time"
+import (
+	"sort"
+	"time"
+)
+
+// topCastMultiplier is the number of top-billed cast members kept for the
+// recommendation profile's actor bucket.
+const topCastN = 5
+
+// topCastIDs returns up to n cast member ids ordered by billing (Order
+// ascending); cast members with no Order are placed last.
+func topCastIDs(c *Casts, n int) []int64 {
+	if c == nil || len(c.Cast) == 0 {
+		return nil
+	}
+	sorted := make([]Cast, len(c.Cast))
+	copy(sorted, c.Cast)
+	sort.SliceStable(sorted, func(i, j int) bool {
+		oi, oj := sorted[i].Order, sorted[j].Order
+		if oi == nil {
+			return false
+		}
+		if oj == nil {
+			return true
+		}
+		return *oi < *oj
+	})
+	if len(sorted) > n {
+		sorted = sorted[:n]
+	}
+	ids := make([]int64, len(sorted))
+	for i, m := range sorted {
+		ids[i] = m.ID
+	}
+	return ids
+}
+
+// findDirectorID returns the id of the first crew member whose job is
+// "Director", or nil if none is found.
+func findDirectorID(c *Casts) *int64 {
+	if c == nil {
+		return nil
+	}
+	for _, m := range c.Crew {
+		if m.Job != nil && *m.Job == "Director" {
+			id := m.ID
+			return &id
+		}
+	}
+	return nil
+}
+
+// keywordIDs flattens a movie's keywords wrapper into a slice of TMDB keyword ids.
+func keywordIDs(k *KeywordsWrapper) []int64 {
+	if k == nil {
+		return nil
+	}
+	ids := make([]int64, len(k.Keywords))
+	for i, kw := range k.Keywords {
+		ids[i] = kw.ID
+	}
+	return ids
+}
 
 // movieToModel maps a MovieResponse (TMDB API shape) to a Movie (DB model),
 // handling type conversions. Fields owned by another sync (vote_average,
@@ -42,6 +104,9 @@ func movieToModel(data MovieResponse, now time.Time) Movie {
 		ReleaseDate:         data.ReleaseDate,
 		Runtime:             &runtime,
 		WatchProviders:      extractProviderIDs(data.WatchProviders),
+		Keywords:            keywordIDs(data.Keywords),
+		CastIDs:             topCastIDs(data.Casts, topCastN),
+		DirectorID:          findDirectorID(data.Casts),
 		UpdatedAt:           now,
 	}
 }

@@ -2,6 +2,7 @@ package tv
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -26,6 +27,14 @@ type TVRepository interface {
 	PruneUnacceptableUntracked(ctx context.Context, dryRun bool) ([]int64, error)
 	UpdateNextEpisodeAirDates(ctx context.Context, updates []NextEpisodeAirDateUpdate) error
 	GetNextEpisodeAirDatesByIDs(ctx context.Context, ids []int64) (map[int64]string, error)
+	// FindByUserID returns all of a user's raw TV tracking docs.
+	FindByUserID(ctx context.Context, userID string) ([]TVUser, error)
+	// FindOne returns a single user's tracking doc for a TV series, or (nil, nil) if none exists.
+	FindOne(ctx context.Context, userID string, tvID int64) (*TVUser, error)
+	// UpdateProfileContribution persists the recommendation-profile snapshot for a user's TV doc.
+	UpdateProfileContribution(ctx context.Context, userID string, tvID int64, c ProfileContribution) error
+	// FindAllTVUserDocs returns every tv_user doc (for recommendation profile full recompute).
+	FindAllTVUserDocs(ctx context.Context) ([]TVUser, error)
 }
 
 type mongoTVRepository struct {
@@ -77,6 +86,55 @@ func (r *mongoTVRepository) UpsertTVState(ctx context.Context, userID string, tv
 		return fmt.Errorf("tv: upsert state: %w", err)
 	}
 	return nil
+}
+
+func (r *mongoTVRepository) FindByUserID(ctx context.Context, userID string) ([]TVUser, error) {
+	cursor, err := r.db.Collection("tv_user").Find(ctx, bson.M{"user_id": userID})
+	if err != nil {
+		return nil, fmt.Errorf("tv: find by user_id: %w", err)
+	}
+	defer cursor.Close(ctx)
+
+	results := []TVUser{}
+	if err := cursor.All(ctx, &results); err != nil {
+		return nil, fmt.Errorf("tv: decode results: %w", err)
+	}
+	return results, nil
+}
+
+func (r *mongoTVRepository) FindOne(ctx context.Context, userID string, tvID int64) (*TVUser, error) {
+	var t TVUser
+	err := r.db.Collection("tv_user").FindOne(ctx, bson.M{"id": tvID, "user_id": userID}).Decode(&t)
+	if errors.Is(err, mongo.ErrNoDocuments) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("tv: find one %d/%s: %w", tvID, userID, err)
+	}
+	return &t, nil
+}
+
+func (r *mongoTVRepository) UpdateProfileContribution(ctx context.Context, userID string, tvID int64, c ProfileContribution) error {
+	filter := bson.M{"id": tvID, "user_id": userID}
+	update := bson.M{"$set": bson.M{"profile_contribution": c}}
+	if _, err := r.db.Collection("tv_user").UpdateOne(ctx, filter, update); err != nil {
+		return fmt.Errorf("tv: update profile contribution %d/%s: %w", tvID, userID, err)
+	}
+	return nil
+}
+
+func (r *mongoTVRepository) FindAllTVUserDocs(ctx context.Context) ([]TVUser, error) {
+	cursor, err := r.db.Collection("tv_user").Find(ctx, bson.M{})
+	if err != nil {
+		return nil, fmt.Errorf("tv: find all tv_user docs: %w", err)
+	}
+	defer cursor.Close(ctx)
+
+	results := []TVUser{}
+	if err := cursor.All(ctx, &results); err != nil {
+		return nil, fmt.Errorf("tv: decode all tv_user docs: %w", err)
+	}
+	return results, nil
 }
 
 func (r *mongoTVRepository) UpsertEpisodes(ctx context.Context, userID string, req UpsertEpisodesRequest) error {

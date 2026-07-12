@@ -15,6 +15,7 @@ import (
 	"github.com/peera/movizius-go-service/internal/health"
 	"github.com/peera/movizius-go-service/internal/movie"
 	"github.com/peera/movizius-go-service/internal/notification"
+	"github.com/peera/movizius-go-service/internal/recommendation"
 	"github.com/peera/movizius-go-service/internal/shared/middleware"
 	"github.com/peera/movizius-go-service/internal/shared/response"
 	"github.com/peera/movizius-go-service/internal/tv"
@@ -27,17 +28,18 @@ import (
 
 // Deps holds the shared infrastructure dependencies injected into feature handlers.
 type Deps struct {
-	DB             *mongo.Database
-	Cache          cache.Cache
-	JWKS           keyfunc.Keyfunc
-	Auth0IssuerURL string
-	Auth0Audience  string
-	Auth0          *auth0.Client
-	Firebase       *firebase.App
-	TMDB           *tmdb.Client
-	TVMaze         *tvmaze.Client
-	Logger         *slog.Logger
-	Development    bool
+	DB                   *mongo.Database
+	Cache                cache.Cache
+	JWKS                 keyfunc.Keyfunc
+	Auth0IssuerURL       string
+	Auth0Audience        string
+	Auth0                *auth0.Client
+	Firebase             *firebase.App
+	TMDB                 *tmdb.Client
+	TVMaze               *tvmaze.Client
+	Logger               *slog.Logger
+	Development          bool
+	RecommendationConfig recommendation.Config
 }
 
 // New constructs the application handler with all feature routes registered under /api.
@@ -76,9 +78,12 @@ func New(deps Deps) http.Handler {
 		return auth(user.SyncMiddleware(userService, deps.Logger)(next))
 	}
 
+	recService := recommendation.NewService(recommendation.NewRepository(deps.DB), movieRepo, tvRepo, deps.RecommendationConfig, deps.Logger)
+
 	user.NewHandler(userService, deps.Logger).RegisterRoutes(mux, authSynced)
-	movie.NewHandler(movie.NewService(movieRepo, deps.TMDB, deps.Cache), deps.Logger).RegisterRoutes(mux, authSynced)
-	tv.NewHandler(tv.NewService(tvRepo, deps.TMDB, deps.Cache), deps.Logger).RegisterRoutes(mux, authSynced)
+	movie.NewHandler(movie.NewService(movieRepo, deps.TMDB, deps.Cache, recService), deps.Logger).RegisterRoutes(mux, authSynced)
+	tv.NewHandler(tv.NewService(tvRepo, deps.TMDB, deps.Cache, recService), deps.Logger).RegisterRoutes(mux, authSynced)
+	recommendation.NewHandler(recService, deps.Logger).RegisterRoutes(mux, authSynced)
 	notification.NewHandler(notification.NewService(notification.NewRepository(deps.DB), deps.Firebase), deps.Logger).RegisterRoutes(mux, authSynced)
 
 	datasync.NewHandler(datasync.NewService(

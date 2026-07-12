@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"math/rand"
 	"sync"
 	"time"
 
@@ -13,7 +12,7 @@ import (
 	"github.com/peera/movizius-go-service/pkg/tmdb"
 )
 
-const appendToResponse = "casts,videos,watch/providers,release_dates,external_ids"
+const appendToResponse = "casts,videos,watch/providers,release_dates,external_ids,keywords"
 
 // randomSeenTTL is how long a served movie id stays excluded from that user's
 // future /movie/random calls. Rolling: refreshed on every call.
@@ -29,16 +28,41 @@ const randomMaxPages = 5
 // randomTimeWindow is the trending time window Random samples from.
 const randomTimeWindow = "day"
 
+// MovieAffinity holds a user's recommendation-profile scores (-100..100) for
+// the entity buckets relevant to ranking movie candidates, keyed by TMDB
+// entity id. Defined here (rather than imported from the recommendation
+// package) to avoid a cyclic dependency — recommendation already imports
+// movie for its repository/model types.
+type MovieAffinity struct {
+	Genres              map[int64]int
+	Keywords            map[int64]int
+	Actors              map[int64]int
+	Directors           map[int64]int
+	Collections         map[int64]int
+	ProductionCompanies map[int64]int
+}
+
+// RecommendationUpdater is the narrow interface MovieService uses to trigger
+// a recommendation-profile update after a state change and to read back a
+// user's affinity scores for ranking, without importing the recommendation
+// package's concrete type. Errors from ApplyMovieStateChange are handled
+// internally by the implementation — it never fails the caller's request.
+type RecommendationUpdater interface {
+	ApplyMovieStateChange(ctx context.Context, userID string, movieID int64)
+	GetMovieAffinity(ctx context.Context, userID string) (MovieAffinity, error)
+}
+
 // MovieService holds the business logic for the movie feature.
 type MovieService struct {
-	repo  MovieRepository
-	tmdb  *tmdb.Client
-	cache cache.Cache
+	repo           MovieRepository
+	tmdb           *tmdb.Client
+	cache          cache.Cache
+	recommendation RecommendationUpdater
 }
 
 // NewService constructs a MovieService.
-func NewService(repo MovieRepository, tmdb *tmdb.Client, c cache.Cache) *MovieService {
-	return &MovieService{repo: repo, tmdb: tmdb, cache: c}
+func NewService(repo MovieRepository, tmdb *tmdb.Client, c cache.Cache, rec RecommendationUpdater) *MovieService {
+	return &MovieService{repo: repo, tmdb: tmdb, cache: c, recommendation: rec}
 }
 
 func randomSeenKey(userID string) string {
@@ -137,11 +161,14 @@ func (s *MovieService) Discover(ctx context.Context, userID string, q DiscoverQu
 }
 
 // Random returns up to total movies the user hasn't tracked yet (per withoutStatus),
-// sampled by shuffling TMDB's trending pool (day window, already filtered through
+// sampled from TMDB's trending pool (day window, already filtered through
 // isAcceptableMovie via Trending). Trending is paged (up to randomMaxPages) until
 // enough untracked, unseen candidates are gathered or trending is exhausted. Ids
 // served recently (see the Redis "seen" cache) are excluded so consecutive calls
-// don't repeat the same titles.
+// don't repeat the same titles. When a recommendation profile is available,
+// sampling is biased toward candidates matching the user's liked genres,
+// keywords, cast, director, collection and production companies — still
+// randomized, but weighted rather than uniform.
 func (s *MovieService) Random(ctx context.Context, userID string, total int, withoutStatus []string) ([]MovieResponse, error) {
 	seenIDs := s.loadSeenIDs(ctx, userID)
 	seenSet := make(map[int64]struct{}, len(seenIDs))
@@ -152,6 +179,16 @@ func (s *MovieService) Random(ctx context.Context, userID string, total int, wit
 	excludeSet, err := s.trackedExcludeIDs(ctx, userID, withoutStatus)
 	if err != nil {
 		return nil, err
+	}
+
+	affinity := MovieAffinity{}
+	if s.recommendation != nil {
+		affinity, err = s.recommendation.GetMovieAffinity(ctx, userID)
+		if err != nil {
+			// Personalization is best-effort — fall back to an empty (neutral)
+			// affinity rather than failing the request.
+			affinity = MovieAffinity{}
+		}
 	}
 
 	pool := make([]MovieResponse, 0, total)
@@ -180,10 +217,7 @@ func (s *MovieService) Random(ctx context.Context, userID string, total int, wit
 		}
 	}
 
-	rand.Shuffle(len(pool), func(i, j int) { pool[i], pool[j] = pool[j], pool[i] })
-	if len(pool) > total {
-		pool = pool[:total]
-	}
+	pool = weightedSample(pool, affinity, total)
 
 	ids := make([]int64, len(pool))
 	for i, m := range pool {
@@ -409,7 +443,13 @@ func (s *MovieService) UpsertState(ctx context.Context, userID string, req Upser
 	if req.Rating != nil && (*req.Rating < 0 || *req.Rating > 10) {
 		return fmt.Errorf("movie service: invalid rating %v", *req.Rating)
 	}
-	return s.repo.UpsertState(ctx, userID, req)
+	if err := s.repo.UpsertState(ctx, userID, req); err != nil {
+		return err
+	}
+	if s.recommendation != nil {
+		s.recommendation.ApplyMovieStateChange(ctx, userID, req.ID)
+	}
+	return nil
 }
 
 func accountStatus(watchedAt *time.Time) *string {

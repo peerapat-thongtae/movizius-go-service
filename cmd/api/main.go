@@ -23,6 +23,7 @@ import (
 
 	"github.com/joho/godotenv"
 
+	"github.com/peera/movizius-go-service/internal/recommendation"
 	"github.com/peera/movizius-go-service/internal/shared/middleware"
 	"github.com/peera/movizius-go-service/internal/shared/router"
 	pkgauth0 "github.com/peera/movizius-go-service/pkg/auth0"
@@ -92,6 +93,17 @@ func main() {
 		TVMaze:         tvmaze.New(""),
 		Logger:         log,
 		Development:    cfg.IsDevelopment(),
+		RecommendationConfig: recommendation.Config{
+			HalfLifeDays:        cfg.RecHalfLifeDays,
+			RewatchBonusK:       cfg.RecRewatchBonusK,
+			LeadActorMultiplier: cfg.RecLeadActorMultiplier,
+			ActorMultiplier:     cfg.RecActorMultiplier,
+			DirectorMultiplier:  cfg.RecDirectorMultiplier,
+			CreatorMultiplier:   cfg.RecCreatorMultiplier,
+			PruneMinCount:       cfg.RecPruneMinCount,
+			PruneMaxAbsScore:    cfg.RecPruneMaxAbsScore,
+			BucketCap:           cfg.RecBucketCap,
+		},
 	})); err != nil {
 		log.Error("server stopped", "error", err)
 		os.Exit(1)
