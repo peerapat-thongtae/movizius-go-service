@@ -1,10 +1,6 @@
 package movie
 
-import (
-	"math"
-	"math/rand"
-	"sort"
-)
+import "sort"
 
 // candidateAffinityScore averages the user's recommendation-profile scores
 // across every entity of m that appears in aff (genres, keywords, cast,
@@ -57,38 +53,30 @@ func candidateAffinityScore(m Movie, aff MovieAffinity) float64 {
 	return sum / float64(n)
 }
 
-// weightFromScore maps a -100..100 affinity score to a positive sampling
-// weight: 0 (neutral/unknown) maps to 1, positive scores increase it,
-// negative scores decrease it (but never to 0, so low-affinity candidates
-// can still surface occasionally, just less often).
-func weightFromScore(score float64) float64 {
-	return math.Pow(2, score/50)
-}
-
-// weightedRank orders candidates randomly but biased toward higher affinity
-// via weighted reservoir sampling (Efraimidis-Spirakis: key = u^(1/weight)
-// for u ~ Uniform(0,1), highest keys first). This keeps /movie/recommendations
-// from returning the exact same ordering on every call while still favoring
-// titles that match the user's profile more strongly.
-func weightedRank(candidates []Movie, aff MovieAffinity) []Movie {
-	type keyed struct {
+// rankByAffinity orders candidates by descending candidateAffinityScore —
+// the actual computed recommendation-profile match — with ties broken by
+// movie id for a stable, deterministic ordering across repeated calls (so
+// paging through results, combined with seen-id exclusion, doesn't reshuffle
+// already-served titles).
+func rankByAffinity(candidates []Movie, aff MovieAffinity) []Movie {
+	type scored struct {
 		movie Movie
-		key   float64
+		score float64
 	}
-	keys := make([]keyed, len(candidates))
+	scoredList := make([]scored, len(candidates))
 	for i, m := range candidates {
-		w := weightFromScore(candidateAffinityScore(m, aff))
-		u := rand.Float64()
-		if u <= 0 {
-			u = 1e-9
-		}
-		keys[i] = keyed{movie: m, key: math.Pow(u, 1/w)}
+		scoredList[i] = scored{movie: m, score: candidateAffinityScore(m, aff)}
 	}
-	sort.Slice(keys, func(i, j int) bool { return keys[i].key > keys[j].key })
+	sort.Slice(scoredList, func(i, j int) bool {
+		if scoredList[i].score != scoredList[j].score {
+			return scoredList[i].score > scoredList[j].score
+		}
+		return scoredList[i].movie.MovieID < scoredList[j].movie.MovieID
+	})
 
-	result := make([]Movie, len(keys))
-	for i, k := range keys {
-		result[i] = k.movie
+	result := make([]Movie, len(scoredList))
+	for i, s := range scoredList {
+		result[i] = s.movie
 	}
 	return result
 }

@@ -5,13 +5,17 @@ import (
 	"sort"
 )
 
-// Score converts an accumulated (rawSum, count) pair into the public-facing
+// Score converts an accumulated (rawSum, weightSum) pair into the public
 // -100..100 integer score via a tanh squash (smooth bound, no hard clipping).
-func Score(rawSum float64, count int) int {
-	if count == 0 {
+// weightSum (recency-weighted evidence), not a raw event count, is the
+// denominator — this makes avg a true weighted average of each event's
+// signal, so a long tail of stale/decayed events doesn't crush the score
+// toward zero the way dividing by a flat count would.
+func Score(rawSum, weightSum float64) int {
+	if weightSum == 0 {
 		return 0
 	}
-	avg := rawSum / float64(count)
+	avg := rawSum / weightSum
 	return int(math.Round(math.Tanh(avg) * 100))
 }
 

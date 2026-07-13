@@ -15,12 +15,13 @@ import (
 
 const appendToResponse = "casts,videos,watch/providers,release_dates,external_ids,keywords"
 
-// randomSeenTTL is how long a served movie id stays excluded from that user's
-// future /movie/random calls. Rolling: refreshed on every call.
-const randomSeenTTL = 24 * time.Hour
+// seenTTL is how long a served movie id stays excluded from that user's
+// future /movie/random or /movie/recommendations calls. Rolling: refreshed
+// on every call.
+const seenTTL = 24 * time.Hour
 
-// randomSeenCap bounds how many ids we remember per user, dropping the oldest.
-const randomSeenCap = 300
+// seenCap bounds how many ids we remember per user/feature, dropping the oldest.
+const seenCap = 300
 
 // randomMaxPages caps how many trending pages Random will fetch while trying
 // to fill total.
@@ -81,10 +82,18 @@ func randomSeenKey(userID string) string {
 	return "movie:random:seen:" + userID
 }
 
-// loadSeenIDs returns the ids previously served to this user via Random.
-// Cache errors are swallowed — caching is best-effort and must never fail the request.
-func (s *MovieService) loadSeenIDs(ctx context.Context, userID string) []int64 {
-	raw, ok, err := s.cache.Get(ctx, randomSeenKey(userID))
+// recommendationSeenKey namespaces the seen-id cache for /movie/recommendations,
+// separate from Random's, so serving a title via one endpoint doesn't
+// suppress it on the other.
+func recommendationSeenKey(userID string) string {
+	return "movie:recommendations:seen:" + userID
+}
+
+// loadSeenIDs returns the ids previously served to this user under the given
+// cache key. Cache errors are swallowed — caching is best-effort and must
+// never fail the request.
+func (s *MovieService) loadSeenIDs(ctx context.Context, key string) []int64 {
+	raw, ok, err := s.cache.Get(ctx, key)
 	if err != nil || !ok {
 		return nil
 	}
@@ -95,17 +104,18 @@ func (s *MovieService) loadSeenIDs(ctx context.Context, userID string) []int64 {
 	return ids
 }
 
-// saveSeenIDs merges newIDs into the user's seen-set, caps its size, and refreshes the TTL.
-func (s *MovieService) saveSeenIDs(ctx context.Context, userID string, existing, newIDs []int64) {
+// saveSeenIDs merges newIDs into the seen-set under the given cache key,
+// caps its size, and refreshes the TTL.
+func (s *MovieService) saveSeenIDs(ctx context.Context, key string, existing, newIDs []int64) {
 	merged := append(existing, newIDs...)
-	if len(merged) > randomSeenCap {
-		merged = merged[len(merged)-randomSeenCap:]
+	if len(merged) > seenCap {
+		merged = merged[len(merged)-seenCap:]
 	}
 	raw, err := json.Marshal(merged)
 	if err != nil {
 		return
 	}
-	_ = s.cache.Set(ctx, randomSeenKey(userID), string(raw), randomSeenTTL)
+	_ = s.cache.Set(ctx, key, string(raw), seenTTL)
 }
 
 // GetStates returns all movie tracking records for the given user.
@@ -184,16 +194,15 @@ func (s *MovieService) enrichMovieIDs(ctx context.Context, ids []int64) ([]Movie
 	return results, nil
 }
 
-// Recommendations returns a page of movies sampled from candidates matching
-// the authenticated user's recommendation profile (liked genres/keywords/
-// cast/director/collection/production companies), excluding titles the
-// profile already counts as watched. Ordering is randomized but biased
-// toward higher-affinity candidates (see weightedRank), so repeated calls
-// don't return the exact same order/page every time. Returns an empty result
-// (not an error) when no recommendation service is wired or the user has no
-// positive profile signal yet — callers should treat that as "not enough
-// data", the same as a cold-start user; this endpoint intentionally does not
-// fall back to trending/popular titles.
+// Recommendations returns a page of movies ranked by the authenticated
+// user's actual computed recommendation-profile affinity score (see
+// rankByAffinity), excluding titles the profile already counts as watched
+// and titles already served to this user by a previous call to this
+// endpoint (tracked via a rolling seen-id cache, see recommendationSeenKey).
+// Returns an empty result (not an error) when no recommendation service is
+// wired or the user has no positive profile signal yet — callers should
+// treat that as "not enough data", the same as a cold-start user; this
+// endpoint intentionally does not fall back to trending/popular titles.
 func (s *MovieService) Recommendations(ctx context.Context, userID string, page int) ([]MovieResponse, int, error) {
 	if s.recommendation == nil {
 		return []MovieResponse{}, 0, nil
@@ -221,13 +230,22 @@ func (s *MovieService) Recommendations(ctx context.Context, userID string, page 
 		return nil, 0, fmt.Errorf("movie service: find recommendation candidates: %w", err)
 	}
 
+	seenIDs := s.loadSeenIDs(ctx, recommendationSeenKey(userID))
+	seenSet := make(map[int64]struct{}, len(seenIDs))
+	for _, id := range seenIDs {
+		seenSet[id] = struct{}{}
+	}
+
 	scored := make([]Movie, 0, len(candidates))
 	for _, m := range candidates {
+		if _, ok := seenSet[m.MovieID]; ok {
+			continue
+		}
 		if isAcceptableMovieDoc(m) {
 			scored = append(scored, m)
 		}
 	}
-	scored = weightedRank(scored, aff)
+	scored = rankByAffinity(scored, aff)
 
 	total := len(scored)
 	start := (page - 1) * recommendationsPageSize
@@ -248,6 +266,7 @@ func (s *MovieService) Recommendations(ctx context.Context, userID string, page 
 	if err != nil {
 		return nil, 0, err
 	}
+	s.saveSeenIDs(ctx, recommendationSeenKey(userID), seenIDs, pageIDs)
 	return results, total, nil
 }
 
@@ -270,7 +289,7 @@ func positiveScoreIDs(scores map[int64]int) []int64 {
 // served recently (see the Redis "seen" cache) are excluded so consecutive calls
 // don't repeat the same titles.
 func (s *MovieService) Random(ctx context.Context, userID string, total int, withoutStatus []string) ([]MovieResponse, error) {
-	seenIDs := s.loadSeenIDs(ctx, userID)
+	seenIDs := s.loadSeenIDs(ctx, randomSeenKey(userID))
 	seenSet := make(map[int64]struct{}, len(seenIDs))
 	for _, id := range seenIDs {
 		seenSet[id] = struct{}{}
@@ -316,7 +335,7 @@ func (s *MovieService) Random(ctx context.Context, userID string, total int, wit
 	for i, m := range pool {
 		ids[i] = m.ID
 	}
-	s.saveSeenIDs(ctx, userID, seenIDs, ids)
+	s.saveSeenIDs(ctx, randomSeenKey(userID), seenIDs, ids)
 
 	return pool, nil
 }

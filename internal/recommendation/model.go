@@ -10,13 +10,14 @@ import "time"
 // ScoringVersion must bump whenever the weighting formula or its constants
 // change, so stale profiles can be identified and reconciled via a full
 // recompute.
-const ScoringVersion = 1
+const ScoringVersion = 3
 
 // BucketEntry is one entity's accumulated score within a bucket.
 type BucketEntry struct {
-	Score  int     `bson:"score"  json:"score"`
-	Count  int     `bson:"count"  json:"count"`
-	RawSum float64 `bson:"rawSum" json:"-"` // internal only; stripped before API response
+	Score     int     `bson:"score"     json:"score"`
+	Count     int     `bson:"count"     json:"count"`
+	RawSum    float64 `bson:"rawSum"    json:"-"` // internal only; stripped before API response
+	WeightSum float64 `bson:"weightSum" json:"-"` // internal only; denominator for Score (recency-weighted evidence, not a raw event count)
 }
 
 // Bucket maps an entity id (as a string, since TMDB ids are used as literal

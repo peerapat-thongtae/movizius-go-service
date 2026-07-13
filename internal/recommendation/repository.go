@@ -73,6 +73,7 @@ func (r *mongoRepository) ApplyProfileUpdate(ctx context.Context, userID string,
 		for _, d := range deltas {
 			base := fmt.Sprintf("recommendationProfile.%s.%s.%s", mediaType, d.Bucket, entityKey(d.EntityID))
 			inc[base+".rawSum"] = d.RawSumDelta
+			inc[base+".weightSum"] = d.WeightDelta
 			if firstTouch {
 				inc[base+".count"] = 1
 			}
@@ -114,7 +115,7 @@ func (r *mongoRepository) ApplyProfileUpdate(ctx context.Context, userID string,
 			bucket := bucketByName(mediaProfile, d.Bucket)
 			entry := bucket[entityKey(d.EntityID)]
 			scorePath := fmt.Sprintf("recommendationProfile.%s.%s.%s.score", mediaType, d.Bucket, entityKey(d.EntityID))
-			scoreSet[scorePath] = Score(entry.RawSum, entry.Count)
+			scoreSet[scorePath] = Score(entry.RawSum, entry.WeightSum)
 		}
 		if len(scoreSet) > 0 {
 			if _, err := coll.UpdateOne(ctx, filter, bson.M{"$set": scoreSet}); err != nil {

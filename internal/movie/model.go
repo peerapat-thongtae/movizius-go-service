@@ -56,6 +56,7 @@ type MovieUser struct {
 // stored on a MovieUser doc (see recommendationProfile feature).
 type ProfileContribution struct {
 	Contribution float64 `bson:"contribution"`
+	Weight       float64 `bson:"weight"`
 	Applied      bool    `bson:"applied"`
 	Version      int     `bson:"version"`
 }

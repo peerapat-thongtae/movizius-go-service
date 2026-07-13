@@ -63,23 +63,11 @@ func TestCandidateAffinityScoreIgnoresUnmatchedEntities(t *testing.T) {
 	}
 }
 
-func TestWeightFromScore(t *testing.T) {
-	if got := weightFromScore(0); got != 1 {
-		t.Errorf("weightFromScore(0) = %v, want 1", got)
-	}
-	if got := weightFromScore(50); got != 2 {
-		t.Errorf("weightFromScore(50) = %v, want 2", got)
-	}
-	if w := weightFromScore(-50); !(w > 0 && w < 1) {
-		t.Errorf("weightFromScore(-50) = %v, want in (0,1)", w)
-	}
-}
-
-func TestWeightedRankPreservesSetAndSize(t *testing.T) {
+func TestRankByAffinityPreservesSetAndSize(t *testing.T) {
 	candidates := []Movie{{MovieID: 1}, {MovieID: 2}, {MovieID: 3}, {MovieID: 4}}
-	got := weightedRank(candidates, MovieAffinity{})
+	got := rankByAffinity(candidates, MovieAffinity{})
 	if len(got) != len(candidates) {
-		t.Fatalf("weightedRank() returned %d items, want %d", len(got), len(candidates))
+		t.Fatalf("rankByAffinity() returned %d items, want %d", len(got), len(candidates))
 	}
 	seen := map[int64]bool{}
 	for _, m := range got {
@@ -87,30 +75,50 @@ func TestWeightedRankPreservesSetAndSize(t *testing.T) {
 	}
 	for _, c := range candidates {
 		if !seen[c.MovieID] {
-			t.Errorf("weightedRank() dropped candidate %d", c.MovieID)
+			t.Errorf("rankByAffinity() dropped candidate %d", c.MovieID)
 		}
 	}
 }
 
-func TestWeightedRankBiasesTowardHigherAffinity(t *testing.T) {
+func TestRankByAffinityOrdersByScoreDescending(t *testing.T) {
 	liked := Movie{MovieID: 999, Genres: []int64{1}}
-	aff := MovieAffinity{Genres: map[int64]int{1: 100}}
+	disliked := Movie{MovieID: 1, Genres: []int64{2}}
+	neutral := Movie{MovieID: 500}
+	aff := MovieAffinity{Genres: map[int64]int{1: 100, 2: -100}}
 
-	firstPickCount := 0
-	trials := 200
-	for i := 0; i < trials; i++ {
-		candidates := []Movie{liked}
-		for j := int64(0); j < 19; j++ {
-			candidates = append(candidates, Movie{MovieID: j})
-		}
-		got := weightedRank(candidates, aff)
-		if len(got) > 0 && got[0].MovieID == liked.MovieID {
-			firstPickCount++
+	got := rankByAffinity([]Movie{disliked, neutral, liked}, aff)
+	want := []int64{999, 500, 1}
+	for i, id := range want {
+		if got[i].MovieID != id {
+			t.Fatalf("rankByAffinity() = %v, want order %v", movieIDs(got), want)
 		}
 	}
-	// Uniform chance would be ~1/20 = 5% (~10 out of 200); a strong positive
-	// affinity should push this notably above that.
-	if firstPickCount < trials/10 {
-		t.Errorf("liked candidate ranked first %d/%d times, expected notably more than uniform (~%d)", firstPickCount, trials, trials/20)
+}
+
+func TestRankByAffinityIsDeterministic(t *testing.T) {
+	candidates := []Movie{{MovieID: 3}, {MovieID: 1}, {MovieID: 2}}
+	aff := MovieAffinity{}
+
+	first := rankByAffinity(candidates, aff)
+	second := rankByAffinity(candidates, aff)
+	for i := range first {
+		if first[i].MovieID != second[i].MovieID {
+			t.Fatalf("rankByAffinity() not deterministic: %v vs %v", movieIDs(first), movieIDs(second))
+		}
 	}
+	// equal scores (all neutral) tie-break by ascending movie id.
+	want := []int64{1, 2, 3}
+	for i, id := range want {
+		if first[i].MovieID != id {
+			t.Errorf("rankByAffinity() tie-break = %v, want ascending id order %v", movieIDs(first), want)
+		}
+	}
+}
+
+func movieIDs(movies []Movie) []int64 {
+	ids := make([]int64, len(movies))
+	for i, m := range movies {
+		ids[i] = m.MovieID
+	}
+	return ids
 }

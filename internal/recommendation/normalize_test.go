@@ -7,22 +7,23 @@ import (
 
 func TestScore(t *testing.T) {
 	cases := []struct {
-		name   string
-		rawSum float64
-		count  int
-		want   int
+		name      string
+		rawSum    float64
+		weightSum float64
+		want      int
 	}{
-		{"zero count", 5, 0, 0},
+		{"zero weightSum", 5, 0, 0},
 		{"neutral", 0, 3, 0},
 		{"large positive saturates near 100", 1000, 1, 100},
 		{"large negative saturates near -100", -1000, 1, -100},
 		{"negative rawSum yields negative score", -0.5, 2, int(math.Round(math.Tanh(-0.25) * 100))},
+		{"fractional weightSum is a true weighted average", 0.4, 0.5, int(math.Round(math.Tanh(0.8) * 100))},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got := Score(tc.rawSum, tc.count)
+			got := Score(tc.rawSum, tc.weightSum)
 			if got != tc.want {
-				t.Errorf("Score(%v, %v) = %v, want %v", tc.rawSum, tc.count, got, tc.want)
+				t.Errorf("Score(%v, %v) = %v, want %v", tc.rawSum, tc.weightSum, got, tc.want)
 			}
 		})
 	}

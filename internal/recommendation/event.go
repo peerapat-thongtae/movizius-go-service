@@ -53,12 +53,19 @@ func RewatchBonus(rewatchCount int, k float64) float64 {
 	return 1 + math.Log(1+float64(rewatchCount))*k
 }
 
-// Contribution computes the final signed contribution for one watch event:
-// recencyWeight * completionPct * rewatchBonus * ratingSignal.
-func Contribution(in EventInput) float64 {
+// Weight computes the unsigned "how much evidence does this event carry"
+// magnitude: recencyWeight * completionPct * rewatchBonus. Always >= 0. Used
+// as the denominator when averaging signals into a bucket score, so recent/
+// complete events count more than stale ones regardless of how many stale
+// events accumulate.
+func Weight(in EventInput) float64 {
 	recency := RecencyWeight(in.Now, in.ReferenceAt, in.HalfLifeDays)
-	signal := RatingSignal(in.Rating, in.CompletionPct)
 	bonus := RewatchBonus(in.RewatchCount, in.RewatchBonusK)
-	magnitude := recency * in.CompletionPct * bonus
-	return magnitude * signal
+	return recency * in.CompletionPct * bonus
+}
+
+// Contribution computes the final signed contribution for one watch event:
+// weight * ratingSignal.
+func Contribution(in EventInput) float64 {
+	return Weight(in) * RatingSignal(in.Rating, in.CompletionPct)
 }

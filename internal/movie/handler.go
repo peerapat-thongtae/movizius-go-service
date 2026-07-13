@@ -334,7 +334,7 @@ func (h *Handler) Discover(w http.ResponseWriter, r *http.Request) {
 // match the authenticated user's recommendation profile.
 //
 //	@Summary		Personalized movie recommendations
-//	@Description	Returns movies from the local cache sampled from candidates matching the user's recommendation profile (liked genres/keywords/cast/director/collection/production companies), excluding titles the profile already counts as watched. Ordering is randomized but biased toward higher-affinity titles, so repeated calls don't return the exact same order every time. An empty result means there isn't enough profile data yet.
+//	@Description	Returns movies from the local cache ranked by the user's actual computed recommendation-profile affinity score (liked genres/keywords/cast/director/collection/production companies), highest match first. Excludes titles the profile already counts as watched, and titles already served by a previous call (tracked in a rolling per-user seen cache), so repeated calls surface new titles instead of repeating. An empty result means there isn't enough profile data yet or the seen cache has exhausted matching candidates.
 //	@Tags			movies
 //	@Produce		json
 //	@Security		BearerAuth

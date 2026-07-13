@@ -98,7 +98,7 @@ func Load() (*Config, error) {
 	cfg.RecActorMultiplier = getEnvFloat("REC_ACTOR_MULTIPLIER", 1.0)
 	cfg.RecDirectorMultiplier = getEnvFloat("REC_DIRECTOR_MULTIPLIER", 1.2)
 	cfg.RecCreatorMultiplier = getEnvFloat("REC_CREATOR_MULTIPLIER", 1.2)
-	cfg.RecPruneMinCount = getEnvInt("REC_PRUNE_MIN_COUNT", 2)
+	cfg.RecPruneMinCount = getEnvInt("REC_PRUNE_MIN_COUNT", 3)
 	cfg.RecPruneMaxAbsScore = getEnvInt("REC_PRUNE_MAX_ABS_SCORE", 10)
 	cfg.RecBucketCap = getEnvInt("REC_BUCKET_CAP", 100)
 

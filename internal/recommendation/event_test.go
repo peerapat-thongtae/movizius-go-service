@@ -73,6 +73,30 @@ func TestRewatchBonus(t *testing.T) {
 	}
 }
 
+func TestWeight(t *testing.T) {
+	now := time.Now().UTC()
+	r := func(v float64) *float64 { return &v }
+
+	base := EventInput{Now: now, ReferenceAt: now, CompletionPct: 1.0, HalfLifeDays: 90, RewatchBonusK: 0.3}
+
+	high := base
+	high.Rating = r(10)
+	low := base
+	low.Rating = r(0)
+	if Weight(high) != Weight(low) {
+		t.Errorf("Weight should not depend on rating: Weight(rating=10)=%v, Weight(rating=0)=%v", Weight(high), Weight(low))
+	}
+	if Weight(high) <= 0 {
+		t.Errorf("expected positive weight for a fully-watched recent event, got %v", Weight(high))
+	}
+
+	zeroCompletion := base
+	zeroCompletion.CompletionPct = 0
+	if got := Weight(zeroCompletion); got != 0 {
+		t.Errorf("Weight with CompletionPct=0 = %v, want 0", got)
+	}
+}
+
 func TestContribution(t *testing.T) {
 	now := time.Now().UTC()
 	r := func(v float64) *float64 { return &v }

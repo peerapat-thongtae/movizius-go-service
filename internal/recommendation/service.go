@@ -90,11 +90,12 @@ func (s *Service) applyMovieStateChange(ctx context.Context, userID string, movi
 		completion = 1.0
 	}
 
-	prevContribution, firstTouch := previousMovieContribution(doc.ProfileContribution)
+	prevContribution, prevWeight, firstTouch := previousMovieContribution(doc.ProfileContribution)
 	newContribution := 0.0
+	newWeight := 0.0
 	if completion > 0 {
 		referenceAt := *doc.WatchedAt
-		newContribution = Contribution(EventInput{
+		in := EventInput{
 			Now:           time.Now().UTC(),
 			ReferenceAt:   referenceAt,
 			CompletionPct: completion,
@@ -102,10 +103,13 @@ func (s *Service) applyMovieStateChange(ctx context.Context, userID string, movi
 			RewatchCount:  0,
 			HalfLifeDays:  s.cfg.HalfLifeDays,
 			RewatchBonusK: s.cfg.RewatchBonusK,
-		})
+		}
+		newContribution = Contribution(in)
+		newWeight = Weight(in)
 	}
 
-	delta := newContribution - prevContribution
+	contribDelta := newContribution - prevContribution
+	weightDelta := newWeight - prevWeight
 	refs := EntityRefs{
 		Genres:              m.Genres,
 		Keywords:            m.Keywords,
@@ -115,8 +119,8 @@ func (s *Service) applyMovieStateChange(ctx context.Context, userID string, movi
 		ProductionCompanies: m.ProductionCompanies,
 	}
 
-	if delta != 0 {
-		deltas := Deltas(delta, refs, s.multipliers())
+	if contribDelta != 0 || weightDelta != 0 {
+		deltas := Deltas(contribDelta, weightDelta, refs, s.multipliers())
 		var watchedID *int64
 		if firstTouch && completion > 0 {
 			id := movieID
@@ -129,6 +133,7 @@ func (s *Service) applyMovieStateChange(ctx context.Context, userID string, movi
 
 	snapshot := movie.ProfileContribution{
 		Contribution: newContribution,
+		Weight:       newWeight,
 		Applied:      (doc.ProfileContribution != nil && doc.ProfileContribution.Applied) || completion > 0,
 		Version:      ScoringVersion,
 	}
@@ -163,10 +168,11 @@ func (s *Service) applyTVStateChange(ctx context.Context, userID string, tvID in
 	}
 
 	completion := tvCompletionPct(doc, t)
-	prevContribution, firstTouch := previousTVContribution(doc.ProfileContribution)
+	prevContribution, prevWeight, firstTouch := previousTVContribution(doc.ProfileContribution)
 	newContribution := 0.0
+	newWeight := 0.0
 	if completion > 0 {
-		newContribution = Contribution(EventInput{
+		in := EventInput{
 			Now:           time.Now().UTC(),
 			ReferenceAt:   latestEpisodeWatchedAt(doc.EpisodeWatched),
 			CompletionPct: completion,
@@ -174,10 +180,13 @@ func (s *Service) applyTVStateChange(ctx context.Context, userID string, tvID in
 			RewatchCount:  0,
 			HalfLifeDays:  s.cfg.HalfLifeDays,
 			RewatchBonusK: s.cfg.RewatchBonusK,
-		})
+		}
+		newContribution = Contribution(in)
+		newWeight = Weight(in)
 	}
 
-	delta := newContribution - prevContribution
+	contribDelta := newContribution - prevContribution
+	weightDelta := newWeight - prevWeight
 	refs := EntityRefs{
 		Genres:              t.Genres,
 		Keywords:            t.Keywords,
@@ -186,8 +195,8 @@ func (s *Service) applyTVStateChange(ctx context.Context, userID string, tvID in
 		ProductionCompanies: t.ProductionCompanies,
 	}
 
-	if delta != 0 {
-		deltas := Deltas(delta, refs, s.multipliers())
+	if contribDelta != 0 || weightDelta != 0 {
+		deltas := Deltas(contribDelta, weightDelta, refs, s.multipliers())
 		var watchedID *int64
 		if firstTouch && completion > 0 {
 			id := tvID
@@ -200,27 +209,28 @@ func (s *Service) applyTVStateChange(ctx context.Context, userID string, tvID in
 
 	snapshot := tv.ProfileContribution{
 		Contribution: newContribution,
+		Weight:       newWeight,
 		Applied:      (doc.ProfileContribution != nil && doc.ProfileContribution.Applied) || completion > 0,
 		Version:      ScoringVersion,
 	}
 	return s.tv.UpdateProfileContribution(ctx, userID, tvID, snapshot)
 }
 
-// previousMovieContribution reads the prior contribution snapshot, reporting
-// whether this is the title's first-ever contribution.
-func previousMovieContribution(c *movie.ProfileContribution) (float64, bool) {
+// previousMovieContribution reads the prior contribution/weight snapshot,
+// reporting whether this is the title's first-ever contribution.
+func previousMovieContribution(c *movie.ProfileContribution) (contribution, weight float64, firstTouch bool) {
 	if c == nil || !c.Applied {
-		return 0, true
+		return 0, 0, true
 	}
-	return c.Contribution, false
+	return c.Contribution, c.Weight, false
 }
 
 // previousTVContribution mirrors previousMovieContribution for TVUser docs.
-func previousTVContribution(c *tv.ProfileContribution) (float64, bool) {
+func previousTVContribution(c *tv.ProfileContribution) (contribution, weight float64, firstTouch bool) {
 	if c == nil || !c.Applied {
-		return 0, true
+		return 0, 0, true
 	}
-	return c.Contribution, false
+	return c.Contribution, c.Weight, false
 }
 
 // tvCompletionPct derives a 0..1 completion ratio from episodes watched vs.
@@ -325,13 +335,13 @@ func (s *Service) RecomputeUser(ctx context.Context, userID string) error {
 		return err
 	}
 
-	movieContributions := make(map[int64]float64, len(movieDocs))
+	movieContributions := make(map[int64]contributionSnapshot, len(movieDocs))
 	for _, d := range movieDocs {
 		m, ok := movieMetadata[d.MovieID]
 		if !ok || d.WatchedAt == nil {
 			continue
 		}
-		contribution := Contribution(EventInput{
+		in := EventInput{
 			Now:           time.Now().UTC(),
 			ReferenceAt:   *d.WatchedAt,
 			CompletionPct: 1.0,
@@ -339,16 +349,18 @@ func (s *Service) RecomputeUser(ctx context.Context, userID string) error {
 			RewatchCount:  0,
 			HalfLifeDays:  s.cfg.HalfLifeDays,
 			RewatchBonusK: s.cfg.RewatchBonusK,
-		})
+		}
+		contribution := Contribution(in)
+		weight := Weight(in)
 		refs := EntityRefs{
 			Genres: m.Genres, Keywords: m.Keywords, CastIDs: m.CastIDs,
 			DirectorID: m.DirectorID, CollectionID: m.CollectionID, ProductionCompanies: m.ProductionCompanies,
 		}
-		applyDeltasToProfile(&profile.Movie, Deltas(contribution, refs, s.multipliers()))
+		applyDeltasToProfile(&profile.Movie, Deltas(contribution, weight, refs, s.multipliers()))
 		profile.Movie.WatchedIDs = append(profile.Movie.WatchedIDs, d.MovieID)
 		profile.Meta.TotalMovieWatched++
 		profile.Meta.SourceEventCount++
-		movieContributions[d.MovieID] = contribution
+		movieContributions[d.MovieID] = contributionSnapshot{Contribution: contribution, Weight: weight}
 	}
 
 	tvDocs, err := s.tv.FindByUserID(ctx, userID)
@@ -364,7 +376,7 @@ func (s *Service) RecomputeUser(ctx context.Context, userID string) error {
 		return err
 	}
 
-	tvContributions := make(map[int64]float64, len(tvDocs))
+	tvContributions := make(map[int64]contributionSnapshot, len(tvDocs))
 	for _, d := range tvDocs {
 		t, ok := tvMetadata[d.TVID]
 		if !ok {
@@ -374,7 +386,7 @@ func (s *Service) RecomputeUser(ctx context.Context, userID string) error {
 		if completion == 0 {
 			continue
 		}
-		contribution := Contribution(EventInput{
+		in := EventInput{
 			Now:           time.Now().UTC(),
 			ReferenceAt:   latestEpisodeWatchedAt(d.EpisodeWatched),
 			CompletionPct: completion,
@@ -382,16 +394,18 @@ func (s *Service) RecomputeUser(ctx context.Context, userID string) error {
 			RewatchCount:  0,
 			HalfLifeDays:  s.cfg.HalfLifeDays,
 			RewatchBonusK: s.cfg.RewatchBonusK,
-		})
+		}
+		contribution := Contribution(in)
+		weight := Weight(in)
 		refs := EntityRefs{
 			Genres: t.Genres, Keywords: t.Keywords, CastIDs: t.CastIDs,
 			CreatorIDs: t.CreatorIDs, ProductionCompanies: t.ProductionCompanies,
 		}
-		applyDeltasToProfile(&profile.TV, Deltas(contribution, refs, s.multipliers()))
+		applyDeltasToProfile(&profile.TV, Deltas(contribution, weight, refs, s.multipliers()))
 		profile.TV.WatchedIDs = append(profile.TV.WatchedIDs, d.TVID)
 		profile.Meta.TotalTvWatched++
 		profile.Meta.SourceEventCount++
-		tvContributions[d.TVID] = contribution
+		tvContributions[d.TVID] = contributionSnapshot{Contribution: contribution, Weight: weight}
 	}
 
 	profile.Movie.Genres = PruneAndCap(profile.Movie.Genres, s.cfg.PruneMinCount, s.cfg.PruneMaxAbsScore, s.cfg.BucketCap)
@@ -412,20 +426,28 @@ func (s *Service) RecomputeUser(ctx context.Context, userID string) error {
 
 	// Refresh each title's contribution snapshot so subsequent incremental
 	// updates diff against the values baked into this recompute.
-	for movieID, contribution := range movieContributions {
-		snapshot := movie.ProfileContribution{Contribution: contribution, Applied: true, Version: ScoringVersion}
+	for movieID, c := range movieContributions {
+		snapshot := movie.ProfileContribution{Contribution: c.Contribution, Weight: c.Weight, Applied: true, Version: ScoringVersion}
 		if err := s.movie.UpdateProfileContribution(ctx, userID, movieID, snapshot); err != nil {
 			return err
 		}
 	}
-	for tvID, contribution := range tvContributions {
-		snapshot := tv.ProfileContribution{Contribution: contribution, Applied: true, Version: ScoringVersion}
+	for tvID, c := range tvContributions {
+		snapshot := tv.ProfileContribution{Contribution: c.Contribution, Weight: c.Weight, Applied: true, Version: ScoringVersion}
 		if err := s.tv.UpdateProfileContribution(ctx, userID, tvID, snapshot); err != nil {
 			return err
 		}
 	}
 
 	return nil
+}
+
+// contributionSnapshot pairs a title's signed contribution with its unsigned
+// weight, used while building movieContributions/tvContributions during a
+// full recompute.
+type contributionSnapshot struct {
+	Contribution float64
+	Weight       float64
 }
 
 // applyDeltasToProfile applies a set of first-touch deltas directly to a
@@ -444,8 +466,9 @@ func applyDeltasToProfile(mp *MediaProfile, deltas []BucketDelta) {
 		key := entityKey(d.EntityID)
 		entry := (*b)[key]
 		entry.RawSum += d.RawSumDelta
+		entry.WeightSum += d.WeightDelta
 		entry.Count++
-		entry.Score = Score(entry.RawSum, entry.Count)
+		entry.Score = Score(entry.RawSum, entry.WeightSum)
 		(*b)[key] = entry
 	}
 }
