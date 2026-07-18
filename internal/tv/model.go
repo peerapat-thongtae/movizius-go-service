@@ -22,6 +22,7 @@ type TV struct {
 	IsAnime             bool               `bson:"is_anime"                   json:"is_anime"`
 	NumberOfSeasons     *int               `bson:"number_of_seasons"          json:"number_of_seasons"`
 	NumberOfEpisodes    *int               `bson:"number_of_episodes"         json:"number_of_episodes"`
+	EpisodeRunTime      []int              `bson:"episode_run_time"           json:"episode_run_time"`
 	VoteAverage         *float64           `bson:"vote_average"               json:"vote_average"`
 	Type                *string            `bson:"type"                       json:"type"`
 	VoteCount           *int64             `bson:"vote_count"                 json:"vote_count"`

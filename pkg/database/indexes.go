@@ -64,15 +64,16 @@ func ensureTVIndexes(ctx context.Context, db *mongo.Database) error {
 
 func ensureMovieUserIndexes(ctx context.Context, db *mongo.Database) error {
 	_, err := db.Collection("movie_user").Indexes().CreateMany(ctx, []mongo.IndexModel{
-		idx(bson.D{{Key: "user_id", Value: 1}}),                       // initial match in account_status pipeline
-		idx(bson.D{{Key: "id", Value: 1}, {Key: "user_id", Value: 1}}), // lookup sub-pipeline
+		idx(bson.D{{Key: "user_id", Value: 1}}),                                // initial match in account_status pipeline
+		idx(bson.D{{Key: "id", Value: 1}, {Key: "user_id", Value: 1}}),         // lookup sub-pipeline
+		idx(bson.D{{Key: "user_id", Value: 1}, {Key: "watched_at", Value: 1}}), // stats summary period filter
 	})
 	return err
 }
 
 func ensureTVUserIndexes(ctx context.Context, db *mongo.Database) error {
 	_, err := db.Collection("tv_user").Indexes().CreateMany(ctx, []mongo.IndexModel{
-		idx(bson.D{{Key: "user_id", Value: 1}}),                       // initial match in account_status pipeline
+		idx(bson.D{{Key: "user_id", Value: 1}}),                        // initial match in account_status pipeline
 		idx(bson.D{{Key: "id", Value: 1}, {Key: "user_id", Value: 1}}), // lookup sub-pipeline
 	})
 	return err

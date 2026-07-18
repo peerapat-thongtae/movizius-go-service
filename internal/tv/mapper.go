@@ -98,6 +98,7 @@ func tvToModel(data TVResponse, now time.Time) TV {
 		IsAnime:             data.IsAnime,
 		NumberOfSeasons:     &numSeasons,
 		NumberOfEpisodes:    &numEpisodes,
+		EpisodeRunTime:      data.EpisodeRunTime,
 		Type:                &tvType,
 		Popularity:          &data.Popularity,
 		Genres:              genres,
