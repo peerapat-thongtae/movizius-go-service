@@ -35,6 +35,7 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux, auth func(http.Handler) htt
 	mux.Handle("GET /tv/random", auth(http.HandlerFunc(h.Random)))
 	mux.Handle("GET /tv/trending", auth(http.HandlerFunc(h.Trending)))
 	mux.Handle("GET /tv/{id}", auth(http.HandlerFunc(h.GetByID)))
+	mux.Handle("GET /tv/{id}/season/{season_number}", auth(http.HandlerFunc(h.GetSeason)))
 }
 
 // Search searches TMDB for TV series matching a query and enriches results with cached DB data.
@@ -277,6 +278,54 @@ func (h *Handler) GetByID(w http.ResponseWriter, r *http.Request) {
 		}
 		h.log.Error("failed to fetch tv series", "error", err, "id", id, "path", r.URL.Path)
 		response.Error(w, http.StatusInternalServerError, "failed to fetch tv series")
+		return
+	}
+
+	response.Success(w, http.StatusOK, result)
+}
+
+// GetSeason returns full TMDB detail for a single season of a TV series, including its episode list.
+//
+//	@Summary		Get TV season detail
+//	@Description	Returns full TMDB detail for one season of a TV series, including per-episode name, overview, still image, air date, and runtime. Episode watched-state is not included here — clients should cross-reference GET /tv/states' episode_watched array.
+//	@Tags			tv
+//	@Produce		json
+//	@Security		BearerAuth
+//	@Param			id				path		int	true	"TMDB TV id"
+//	@Param			season_number	path		int	true	"Season number"
+//	@Success		200				{object}	tv.SeasonDetailResponse
+//	@Failure		400				{object}	map[string]string
+//	@Failure		401				{object}	map[string]string
+//	@Failure		404				{object}	map[string]string
+//	@Failure		500				{object}	map[string]string
+//	@Router			/tv/{id}/season/{season_number} [get]
+func (h *Handler) GetSeason(w http.ResponseWriter, r *http.Request) {
+	_, ok := middleware.UserIDFromContext(r.Context())
+	if !ok {
+		response.Error(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		response.Error(w, http.StatusBadRequest, "invalid id")
+		return
+	}
+
+	seasonNumber, err := strconv.Atoi(r.PathValue("season_number"))
+	if err != nil {
+		response.Error(w, http.StatusBadRequest, "invalid season_number")
+		return
+	}
+
+	result, err := h.service.GetSeason(r.Context(), id, seasonNumber)
+	if err != nil {
+		if errors.Is(err, tmdb.ErrNotFound) {
+			response.Error(w, http.StatusNotFound, "season not found")
+			return
+		}
+		h.log.Error("failed to fetch tv season", "error", err, "id", id, "season_number", seasonNumber, "path", r.URL.Path)
+		response.Error(w, http.StatusInternalServerError, "failed to fetch tv season")
 		return
 	}
 

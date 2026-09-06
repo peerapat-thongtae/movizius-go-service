@@ -80,6 +80,10 @@ func (c *Client) GetTVSeason(ctx context.Context, tvID int64, season int, target
 	}
 	defer resp.Body.Close()
 
+	if resp.StatusCode == http.StatusNotFound {
+		return fmt.Errorf("tmdb: /tv/%d/season/%d: %w", tvID, season, ErrNotFound)
+	}
+
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("tmdb: /tv/%d/season/%d returned status %d", tvID, season, resp.StatusCode)
 	}

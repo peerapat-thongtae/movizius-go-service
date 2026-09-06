@@ -110,6 +110,39 @@ type StateSeason struct {
 	SeasonNumber int     `bson:"season_number" json:"season_number"`
 }
 
+// SeasonEpisode is a single episode entry returned by GET /tv/{id}/season/{season_number}.
+// Distinct from Episode (last/next-episode-to-air summaries) and StateEpisode
+// (trimmed shape for TVStateResponse) because this endpoint needs overview and
+// still_path, which neither of those carry.
+type SeasonEpisode struct {
+	ID            int64       `json:"id"`
+	Name          string      `json:"name"`
+	Overview      string      `json:"overview"`
+	AirDate       FlexAirDate `json:"air_date"`
+	EpisodeNumber int         `json:"episode_number"`
+	EpisodeType   string      `json:"episode_type"`
+	SeasonNumber  int         `json:"season_number"`
+	Runtime       *int        `json:"runtime"`
+	StillPath     *string     `json:"still_path"`
+	VoteAverage   float64     `json:"vote_average"`
+	VoteCount     int         `json:"vote_count"`
+}
+
+// SeasonDetailResponse is the API response shape for GET /tv/{id}/season/{season_number}.
+// This is a pure TMDB passthrough with no per-user data — clients cross-reference
+// episode_watched from GET /tv/states (already loaded client-side) to compute
+// per-episode watched state, so this stays a cacheable, user-agnostic catalog lookup.
+type SeasonDetailResponse struct {
+	ID           int64           `json:"id"`
+	Name         string          `json:"name"`
+	Overview     string          `json:"overview"`
+	AirDate      *string         `json:"air_date"`
+	PosterPath   *string         `json:"poster_path"`
+	SeasonNumber int             `json:"season_number"`
+	VoteAverage  float64         `json:"vote_average"`
+	Episodes     []SeasonEpisode `json:"episodes"`
+}
+
 // TVStateResponse is the API response shape for GET /tv/states, matching the client TVStates interface.
 type TVStateResponse struct {
 	TVID             int64            `bson:"id"                  json:"id"`

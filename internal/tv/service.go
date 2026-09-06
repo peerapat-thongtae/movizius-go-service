@@ -420,6 +420,68 @@ func (s *TVService) GetByID(ctx context.Context, id int64) (*TVResponse, error) 
 	return &detail, nil
 }
 
+// GetSeason returns full TMDB detail for one season of a TV series, including
+// its episode list. Unlike GetByID this has no DB overlay — episode watched-state
+// is intentionally left to the caller, which already holds the user's full
+// episode_watched array from GetStates and can compute per-episode watched state
+// without a second round-trip or duplicating that logic server-side.
+func (s *TVService) GetSeason(ctx context.Context, tvID int64, seasonNumber int) (*SeasonDetailResponse, error) {
+	var tmdbSeason struct {
+		ID           int64   `json:"id"`
+		Name         string  `json:"name"`
+		Overview     string  `json:"overview"`
+		AirDate      *string `json:"air_date"`
+		PosterPath   *string `json:"poster_path"`
+		SeasonNumber int     `json:"season_number"`
+		VoteAverage  float64 `json:"vote_average"`
+		Episodes     []struct {
+			ID            int64       `json:"id"`
+			Name          string      `json:"name"`
+			Overview      string      `json:"overview"`
+			AirDate       FlexAirDate `json:"air_date"`
+			EpisodeNumber int         `json:"episode_number"`
+			EpisodeType   string      `json:"episode_type"`
+			SeasonNumber  int         `json:"season_number"`
+			Runtime       *int        `json:"runtime"`
+			StillPath     *string     `json:"still_path"`
+			VoteAverage   float64     `json:"vote_average"`
+			VoteCount     int         `json:"vote_count"`
+		} `json:"episodes"`
+	}
+
+	if err := s.tmdb.GetTVSeason(ctx, tvID, seasonNumber, &tmdbSeason); err != nil {
+		return nil, fmt.Errorf("tv service: get season %d for tv %d: %w", seasonNumber, tvID, err)
+	}
+
+	episodes := make([]SeasonEpisode, 0, len(tmdbSeason.Episodes))
+	for _, ep := range tmdbSeason.Episodes {
+		episodes = append(episodes, SeasonEpisode{
+			ID:            ep.ID,
+			Name:          ep.Name,
+			Overview:      ep.Overview,
+			AirDate:       ep.AirDate,
+			EpisodeNumber: ep.EpisodeNumber,
+			EpisodeType:   ep.EpisodeType,
+			SeasonNumber:  ep.SeasonNumber,
+			Runtime:       ep.Runtime,
+			StillPath:     ep.StillPath,
+			VoteAverage:   ep.VoteAverage,
+			VoteCount:     ep.VoteCount,
+		})
+	}
+
+	return &SeasonDetailResponse{
+		ID:           tmdbSeason.ID,
+		Name:         tmdbSeason.Name,
+		Overview:     tmdbSeason.Overview,
+		AirDate:      tmdbSeason.AirDate,
+		PosterPath:   tmdbSeason.PosterPath,
+		SeasonNumber: tmdbSeason.SeasonNumber,
+		VoteAverage:  tmdbSeason.VoteAverage,
+		Episodes:     episodes,
+	}, nil
+}
+
 // UpsertTVState creates or updates the user's TV tracking record.
 // For status="watched" it enumerates all episodes from TMDB and populates episode_watched.
 func (s *TVService) UpsertTVState(ctx context.Context, userID string, req UpsertStateRequest) error {
