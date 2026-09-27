@@ -15,6 +15,7 @@ type DiscoverQuery struct {
 	PrimaryReleaseYear   int
 	ReleaseDateGte       string
 	ReleaseDateLte       string
+	PopularityGte        float64
 	VoteAverageGte       float64
 	VoteAverageLte       float64
 	VoteCountGte         int64
@@ -46,6 +47,7 @@ func discoverQueryFromRequest(r *http.Request) DiscoverQuery {
 		PrimaryReleaseYear:   intParam(q.Get("primary_release_year"), 0),
 		ReleaseDateGte:       q.Get("release_date.gte"),
 		ReleaseDateLte:       q.Get("release_date.lte"),
+		PopularityGte:        float64Param(q.Get("popularity.gte"), 0),
 		VoteAverageGte:       float64Param(q.Get("vote_average.gte"), 0),
 		VoteAverageLte:       float64Param(q.Get("vote_average.lte"), 0),
 		VoteCountGte:         int64Param(q.Get("vote_count.gte"), 0),

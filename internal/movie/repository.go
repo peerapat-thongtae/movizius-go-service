@@ -624,6 +624,9 @@ func movieMatchConditions(q DiscoverQuery) bson.D {
 	if q.VoteCountGte > 0 {
 		match = append(match, bson.E{Key: "vote_count", Value: bson.D{{Key: "$gte", Value: q.VoteCountGte}}})
 	}
+	if q.PopularityGte > 0 {
+		match = append(match, bson.E{Key: "popularity", Value: bson.D{{Key: "$gte", Value: q.PopularityGte}}})
+	}
 	if q.WithOriginalLanguage != "" {
 		match = append(match, bson.E{Key: "original_language", Value: q.WithOriginalLanguage})
 	}
