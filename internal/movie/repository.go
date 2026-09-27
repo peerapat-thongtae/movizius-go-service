@@ -464,6 +464,9 @@ func buildDiscoverPipeline(userID string, q DiscoverQuery) bson.A {
 
 	pipeline := bson.A{}
 	pipeline = append(pipeline, bson.D{{Key: "$match", Value: movieMatchConditions(q)}})
+	if sortByReleaseDate(q.SortBy) {
+		pipeline = append(pipeline, effectiveReleaseDateStage())
+	}
 
 	// Left join movie_user when sorting by user-specific fields (watched_at, watchlisted_at).
 	if sortByUserField(q.SortBy) && userID != "" {
@@ -550,6 +553,9 @@ func buildAccountStatusPipeline(userID string, q DiscoverQuery) bson.A {
 	if cond := movieMatchConditions(q); len(cond) > 0 {
 		pipeline = append(pipeline, bson.D{{Key: "$match", Value: cond}})
 	}
+	if sortByReleaseDate(q.SortBy) {
+		pipeline = append(pipeline, effectiveReleaseDateStage())
+	}
 
 	pipeline = append(pipeline, bson.D{{Key: "$sort", Value: sortStage(q.SortBy)}})
 	pipeline = append(pipeline, watchProviderStages(q.WatchRegion, q.WithWatchProviders)...)
@@ -591,11 +597,7 @@ func movieMatchConditions(q DiscoverQuery) bson.D {
 	} else if q.ReleaseDateGte != "" || q.ReleaseDateLte != "" {
 		// Use release_date_th when non-empty, fall back to release_date.
 		// Normalize input: gte trims to YYYY-MM-DD; lte appends "Z" so RFC3339 values on that day pass.
-		effectiveDate := bson.D{{Key: "$cond", Value: bson.A{
-			bson.D{{Key: "$gt", Value: bson.A{"$release_date_th", ""}}},
-			"$release_date_th",
-			"$release_date",
-		}}}
+		effectiveDate := effectiveReleaseDateExpression()
 		var arms bson.A
 		if q.ReleaseDateGte != "" {
 			arms = append(arms, bson.D{{Key: "$gte", Value: bson.A{effectiveDate, normalizeDateGte(q.ReleaseDateGte)}}})
@@ -654,6 +656,21 @@ func normalizeDateLte(s string) string {
 	return s + "Z"
 }
 
+// effectiveReleaseDateExpression prefers the Thailand release date when available.
+func effectiveReleaseDateExpression() bson.D {
+	return bson.D{{Key: "$cond", Value: bson.A{
+		bson.D{{Key: "$gt", Value: bson.A{"$release_date_th", ""}}},
+		"$release_date_th",
+		"$release_date",
+	}}}
+}
+
+func effectiveReleaseDateStage() bson.D {
+	return bson.D{{Key: "$addFields", Value: bson.D{
+		{Key: "_effective_release_date", Value: effectiveReleaseDateExpression()},
+	}}}
+}
+
 func watchProviderStages(_ string, providers []int64) bson.A {
 	if len(providers) == 0 {
 		return nil
@@ -699,9 +716,9 @@ func sortStage(sortBy string) bson.D {
 	case "popularity.asc":
 		return bson.D{{Key: "popularity", Value: 1}}
 	case "release_date.desc":
-		return bson.D{{Key: "release_date", Value: -1}}
+		return bson.D{{Key: "_effective_release_date", Value: -1}}
 	case "release_date.asc":
-		return bson.D{{Key: "release_date", Value: 1}}
+		return bson.D{{Key: "_effective_release_date", Value: 1}}
 	case "vote_average.desc":
 		return bson.D{{Key: "vote_average", Value: -1}}
 	case "vote_average.asc":
@@ -724,5 +741,14 @@ func sortStage(sortBy string) bson.D {
 		return bson.D{{Key: "watchlisted_at", Value: 1}}
 	default: // popularity.desc
 		return bson.D{{Key: "popularity", Value: -1}}
+	}
+}
+
+func sortByReleaseDate(sortBy string) bool {
+	switch strings.ToLower(sortBy) {
+	case "release_date.asc", "release_date.desc":
+		return true
+	default:
+		return false
 	}
 }
