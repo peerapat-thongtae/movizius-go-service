@@ -416,7 +416,7 @@ func (r *mongoMovieRepository) DiscoverIDs(ctx context.Context, userID string, q
 		coll     *mongo.Collection
 		pipeline bson.A
 	)
-	if (len(q.WithAccountStatus) > 0 || len(q.WithoutAccountStatus) > 0) && userID != "" {
+	if len(q.WithAccountStatus) > 0 && userID != "" {
 		coll = r.db.Collection("movie_user")
 		pipeline = buildAccountStatusPipeline(userID, q)
 	} else {
@@ -468,8 +468,8 @@ func buildDiscoverPipeline(userID string, q DiscoverQuery) bson.A {
 		pipeline = append(pipeline, effectiveReleaseDateStage())
 	}
 
-	// Left join movie_user when sorting by user-specific fields (watched_at, watchlisted_at).
-	if sortByUserField(q.SortBy) && userID != "" {
+	// Left join movie_user when filtering out a status or sorting by user fields.
+	if (sortByUserField(q.SortBy) || len(q.WithoutAccountStatus) > 0) && userID != "" {
 		pipeline = append(pipeline,
 			bson.D{{Key: "$lookup", Value: bson.D{
 				{Key: "from", Value: "movie_user"},
@@ -488,6 +488,16 @@ func buildDiscoverPipeline(userID string, q DiscoverQuery) bson.A {
 				{Key: "watched_at", Value: "$_user.watched_at"},
 				{Key: "watchlisted_at", Value: "$_user.watchlisted_at"},
 			}}},
+		)
+	}
+	if len(q.WithoutAccountStatus) > 0 && userID != "" {
+		pipeline = append(pipeline,
+			bson.D{{Key: "$addFields", Value: bson.D{{Key: "_account_status", Value: bson.D{{Key: "$cond", Value: bson.A{
+				bson.D{{Key: "$ifNull", Value: bson.A{"$_user.watched_at", false}}},
+				"watched",
+				"watchlist",
+			}}}}}}},
+			bson.D{{Key: "$match", Value: accountStatusMatchCond(nil, q.WithoutAccountStatus)}},
 		)
 	}
 

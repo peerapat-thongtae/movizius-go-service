@@ -448,7 +448,7 @@ func (r *mongoTVRepository) DiscoverIDs(ctx context.Context, userID string, q Di
 		coll     *mongo.Collection
 		pipeline bson.A
 	)
-	if (len(q.WithAccountStatus) > 0 || len(q.WithoutAccountStatus) > 0) && userID != "" {
+	if len(q.WithAccountStatus) > 0 && userID != "" {
 		coll = r.db.Collection("tv_user")
 		pipeline = buildAccountStatusPipeline(userID, q)
 	} else {
@@ -508,7 +508,7 @@ func buildDiscoverPipeline(userID string, q DiscoverQuery) bson.A {
 	pipeline := bson.A{}
 	pipeline = append(pipeline, bson.D{{Key: "$match", Value: tvMatchConditions(q)}})
 
-	if tvSortByUserField(q.SortBy) && userID != "" {
+	if (tvSortByUserField(q.SortBy) || len(q.WithoutAccountStatus) > 0) && userID != "" {
 		pipeline = append(pipeline, bson.D{{Key: "$lookup", Value: bson.D{
 			{Key: "from", Value: "tv_user"},
 			{Key: "localField", Value: "id"},
@@ -523,12 +523,45 @@ func buildDiscoverPipeline(userID string, q DiscoverQuery) bson.A {
 			{Key: "preserveNullAndEmptyArrays", Value: true},
 		}}})
 		pipeline = append(pipeline, bson.D{{Key: "$addFields", Value: bson.D{
+			{Key: "_count_watched", Value: bson.D{{Key: "$size", Value: bson.D{{Key: "$ifNull", Value: bson.A{"$_user.episode_watched", bson.A{}}}}}}},
+			{Key: "_max_ep", Value: maxEpReduceExpr("$_user.episode_watched")},
 			{Key: "_max_watched_at", Value: bson.D{{Key: "$max", Value: bson.D{
 				{Key: "$ifNull", Value: bson.A{"$_user.episode_watched.watched_at", bson.A{}}},
 			}}}},
 			{Key: "watchlisted_at", Value: "$_user.watchlisted_at"},
 			{Key: "watched_at", Value: "$_user.watched_at"},
 		}}})
+	}
+	if len(q.WithoutAccountStatus) > 0 && userID != "" {
+		today := time.Now().Format("2006-01-02")
+		pipeline = append(pipeline,
+			bson.D{{Key: "$addFields", Value: bson.D{{Key: "_account_status", Value: bson.D{{Key: "$cond", Value: bson.A{
+				bson.D{{Key: "$and", Value: bson.A{
+					bson.D{{Key: "$gt", Value: bson.A{"$number_of_episodes", 0}}},
+					bson.D{{Key: "$eq", Value: bson.A{"$_count_watched", "$number_of_episodes"}}},
+					bson.D{{Key: "$ne", Value: bson.A{"$status", "Returning Series"}}},
+				}}},
+				"watched",
+				bson.D{{Key: "$cond", Value: bson.A{
+					bson.D{{Key: "$and", Value: bson.A{
+						bson.D{{Key: "$gt", Value: bson.A{"$_count_watched", 0}}},
+						bson.D{{Key: "$eq", Value: bson.A{"$_max_ep.season_number", "$last_episode_to_air.season_number"}}},
+						bson.D{{Key: "$eq", Value: bson.A{"$_max_ep.episode_number", "$last_episode_to_air.episode_number"}}},
+						bson.D{{Key: "$or", Value: bson.A{
+							bson.D{{Key: "$eq", Value: bson.A{"$next_episode_to_air", nil}}},
+							bson.D{{Key: "$gt", Value: bson.A{"$next_episode_to_air.air_date", today}}},
+						}}},
+					}}},
+					"waiting_next_ep",
+					bson.D{{Key: "$cond", Value: bson.A{
+						bson.D{{Key: "$gt", Value: bson.A{"$_count_watched", 0}}},
+						"watching",
+						"watchlist",
+					}}},
+				}}},
+			}}}}}}},
+			bson.D{{Key: "$match", Value: accountStatusMatchCond(nil, q.WithoutAccountStatus)}},
+		)
 	}
 
 	pipeline = append(pipeline, bson.D{{Key: "$sort", Value: tvSortStage(q.SortBy)}})
