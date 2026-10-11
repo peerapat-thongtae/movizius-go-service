@@ -20,6 +20,8 @@ type DiscoverQuery struct {
 	VoteAverageLte       float64
 	VoteCountGte         int64
 	WithOriginalLanguage string
+	RuntimeGte           int
+	RuntimeLte           int
 	IncludeAdult         bool
 	Softcore             *bool
 	WithWatchProviders   []int64
@@ -52,6 +54,8 @@ func discoverQueryFromRequest(r *http.Request) DiscoverQuery {
 		VoteAverageLte:       float64Param(q.Get("vote_average.lte"), 0),
 		VoteCountGte:         int64Param(q.Get("vote_count.gte"), 0),
 		WithOriginalLanguage: q.Get("with_original_language"),
+		RuntimeGte:           intParam(q.Get("with_runtime.gte"), 0),
+		RuntimeLte:           intParam(q.Get("with_runtime.lte"), 0),
 		IncludeAdult:         q.Get("include_adult") == "true",
 		WithWatchProviders:   int64ListParam(q.Get("with_watch_providers")),
 		WatchRegion:          strings.ToUpper(q.Get("watch_region")),

@@ -593,10 +593,10 @@ func movieMatchConditions(q DiscoverQuery) bson.D {
 		match = append(match, bson.E{Key: "adult", Value: bson.D{{Key: "$ne", Value: true}}})
 	}
 	if len(q.WithGenres) > 0 {
-		match = append(match, bson.E{Key: "genres.id", Value: bson.D{{Key: "$all", Value: q.WithGenres}}})
+		match = append(match, bson.E{Key: "genres", Value: bson.D{{Key: "$all", Value: q.WithGenres}}})
 	}
 	if len(q.WithoutGenres) > 0 {
-		match = append(match, bson.E{Key: "genres.id", Value: bson.D{{Key: "$nin", Value: q.WithoutGenres}}})
+		match = append(match, bson.E{Key: "genres", Value: bson.D{{Key: "$nin", Value: q.WithoutGenres}}})
 	}
 	if q.PrimaryReleaseYear > 0 {
 		y := fmt.Sprintf("%04d", q.PrimaryReleaseYear)
@@ -641,6 +641,16 @@ func movieMatchConditions(q DiscoverQuery) bson.D {
 	}
 	if q.WithOriginalLanguage != "" {
 		match = append(match, bson.E{Key: "original_language", Value: q.WithOriginalLanguage})
+	}
+	if q.RuntimeGte > 0 || q.RuntimeLte > 0 {
+		runtime := bson.D{}
+		if q.RuntimeGte > 0 {
+			runtime = append(runtime, bson.E{Key: "$gte", Value: q.RuntimeGte})
+		}
+		if q.RuntimeLte > 0 {
+			runtime = append(runtime, bson.E{Key: "$lte", Value: q.RuntimeLte})
+		}
+		match = append(match, bson.E{Key: "runtime", Value: runtime})
 	}
 	if q.Softcore != nil {
 		match = append(match, bson.E{Key: "softcore", Value: *q.Softcore})

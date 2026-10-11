@@ -61,6 +61,14 @@ func tvKeywordIDs(k *TVKeywordsWrapper) []int64 {
 	return ids
 }
 
+func networkIDs(networks []Network) []int64 {
+	ids := make([]int64, len(networks))
+	for i, network := range networks {
+		ids[i] = network.ID
+	}
+	return ids
+}
+
 // tvToModel maps a TVResponse (TMDB API shape) to a TV (DB model),
 // handling type conversions. Fields owned by another sync (vote_average,
 // vote_count) are left at zero — callers put them in $setOnInsert instead.
@@ -110,6 +118,7 @@ func tvToModel(data TVResponse, now time.Time) TV {
 		LastEpisodeToAir:    data.LastEpisodeToAir,
 		NextEpisodeToAir:    data.NextEpisodeToAir,
 		WatchProviders:      extractProviderIDs(data.WatchProviders),
+		Networks:            networkIDs(data.Networks),
 		UpdatedAt:           now,
 	}
 }

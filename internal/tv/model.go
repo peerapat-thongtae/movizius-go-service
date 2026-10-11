@@ -36,6 +36,7 @@ type TV struct {
 	LastEpisodeToAir    any                `bson:"last_episode_to_air"        json:"last_episode_to_air"`
 	NextEpisodeToAir    any                `bson:"next_episode_to_air"        json:"next_episode_to_air"`
 	WatchProviders      []int64            `bson:"watch_providers"            json:"watch_providers"`
+	Networks            []int64            `bson:"networks"                   json:"networks"`
 	UpdatedAt           time.Time          `bson:"updated_at"                 json:"-"`
 }
 

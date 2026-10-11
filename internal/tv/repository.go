@@ -679,10 +679,10 @@ func tvMatchConditions(q DiscoverQuery) bson.D {
 		match = append(match, bson.E{Key: "adult", Value: bson.D{{Key: "$ne", Value: true}}})
 	}
 	if len(q.WithGenres) > 0 {
-		match = append(match, bson.E{Key: "genres.id", Value: bson.D{{Key: "$all", Value: q.WithGenres}}})
+		match = append(match, bson.E{Key: "genres", Value: bson.D{{Key: "$all", Value: q.WithGenres}}})
 	}
 	if len(q.WithoutGenres) > 0 {
-		match = append(match, bson.E{Key: "genres.id", Value: bson.D{{Key: "$nin", Value: q.WithoutGenres}}})
+		match = append(match, bson.E{Key: "genres", Value: bson.D{{Key: "$nin", Value: q.WithoutGenres}}})
 	}
 	if q.FirstAirDateYear > 0 {
 		y := fmt.Sprintf("%04d", q.FirstAirDateYear)
@@ -722,13 +722,16 @@ func tvMatchConditions(q DiscoverQuery) bson.D {
 		match = append(match, bson.E{Key: "softcore", Value: *q.Softcore})
 	}
 	if len(q.WithNetworks) > 0 {
-		match = append(match, bson.E{Key: "networks.id", Value: bson.D{{Key: "$in", Value: q.WithNetworks}}})
+		match = append(match, bson.E{Key: "networks", Value: bson.D{{Key: "$in", Value: q.WithNetworks}}})
 	}
 	if q.IsAnime != nil {
 		match = append(match, bson.E{Key: "is_anime", Value: *q.IsAnime})
 	}
 	if q.WithStatus != "" {
 		match = append(match, bson.E{Key: "status", Value: q.WithStatus})
+	}
+	if q.NumberOfSeasonsGte > 0 {
+		match = append(match, bson.E{Key: "number_of_seasons", Value: bson.D{{Key: "$gte", Value: q.NumberOfSeasonsGte}}})
 	}
 	if q.WithType != "" {
 		match = append(match, bson.E{Key: "type", Value: q.WithType})

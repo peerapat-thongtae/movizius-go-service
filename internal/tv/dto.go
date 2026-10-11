@@ -28,6 +28,7 @@ type DiscoverQuery struct {
 	WithNetworks          []int64
 	IsAnime               *bool
 	WithStatus            string
+	NumberOfSeasonsGte    int
 	WithType              string
 	NextEpisodeAirDateGte string
 	NextEpisodeAirDateLte string
@@ -77,6 +78,7 @@ func discoverQueryFromRequest(r *http.Request) DiscoverQuery {
 		WithoutAccountStatus:  stringListParam(q.Get("without_account_status")),
 		WithNetworks:          int64ListParam(q.Get("with_networks")),
 		WithStatus:            q.Get("with_status"),
+		NumberOfSeasonsGte:    intParam(q.Get("with_number_of_seasons.gte"), 0),
 		WithType:              q.Get("with_type"),
 		NextEpisodeAirDateGte: q.Get("with_next_episode_air_date.gte"),
 		NextEpisodeAirDateLte: q.Get("with_next_episode_air_date.lte"),
