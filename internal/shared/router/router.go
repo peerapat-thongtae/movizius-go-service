@@ -47,7 +47,7 @@ type Deps struct {
 // Go's ServeMux automatically redirects /api → /api/ so both forms work.
 func New(deps Deps) http.Handler {
 	mux := http.NewServeMux()
-	auth := middleware.RequireAuth(deps.JWKS, deps.Auth0IssuerURL, deps.Auth0Audience)
+	auth := middleware.RequireAuth(deps.JWKS, deps.Auth0IssuerURL, deps.Auth0Audience, deps.Logger)
 
 	// Root hello-world.
 	mux.HandleFunc("GET /{$}", root)

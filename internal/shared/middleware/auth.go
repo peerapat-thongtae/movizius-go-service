@@ -4,6 +4,7 @@ package middleware
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strings"
 
@@ -32,11 +33,20 @@ func NewJWKS(issuerURL string) (keyfunc.Keyfunc, error) {
 // RequireAuth returns middleware that validates Auth0 Bearer JWTs.
 // On success it stores the Auth0 sub claim in the request context.
 // On failure it writes a 401 response and stops the chain.
-func RequireAuth(kf keyfunc.Keyfunc, issuer, audience string) func(http.Handler) http.Handler {
+func RequireAuth(kf keyfunc.Keyfunc, issuer, audience string, log *slog.Logger) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			token, err := extractAndValidate(r, kf, issuer, audience)
 			if err != nil {
+				// Keep the response deliberately generic, but retain the JWT validation
+				// failure in server logs for diagnosing issuer/audience/signature issues.
+				// Never log the Authorization header or raw token.
+				log.Warn("authentication failed",
+					"error", err,
+					"method", r.Method,
+					"path", r.URL.Path,
+					"has_bearer_token", strings.HasPrefix(r.Header.Get("Authorization"), "Bearer "),
+				)
 				response.Error(w, http.StatusUnauthorized, "unauthorized")
 				return
 			}
