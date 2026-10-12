@@ -2,7 +2,8 @@ package tv
 
 import "testing"
 
-func intPtr(v int) *int { return &v }
+func intPtr(v int) *int       { return &v }
+func strPtr(v string) *string { return &v }
 
 func TestTopCastIDs(t *testing.T) {
 	credits := &Credits{
@@ -44,6 +45,28 @@ func TestCreatorIDs(t *testing.T) {
 	}
 	if got := creatorIDs(nil); got != nil {
 		t.Errorf("creatorIDs(nil) = %v, want nil", got)
+	}
+}
+
+func TestWriterIDs(t *testing.T) {
+	credits := &Credits{Crew: []CastMember{
+		{ID: 1, Job: strPtr("Writer")},
+		{ID: 2, Job: strPtr("Teleplay")},
+		{ID: 1, Job: strPtr("Characters")},
+		{ID: 3, Job: strPtr("Producer")},
+	}}
+	got := writerIDs(credits)
+	want := []int64{1, 2}
+	if len(got) != len(want) {
+		t.Fatalf("writerIDs() = %v, want %v", got, want)
+	}
+	for i, id := range want {
+		if got[i] != id {
+			t.Errorf("writerIDs()[%d] = %d, want %d", i, got[i], id)
+		}
+	}
+	if got := writerIDs(nil); got != nil {
+		t.Errorf("writerIDs(nil) = %v, want nil", got)
 	}
 }
 

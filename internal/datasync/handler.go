@@ -75,7 +75,7 @@ func (h *Handler) SyncTVByIDs(w http.ResponseWriter, r *http.Request) {
 
 // SyncMovieUserTracked syncs TMDB metadata for movie IDs tracked in movie_user.
 func (h *Handler) SyncMovieUserTracked(w http.ResponseWriter, r *http.Request) {
-	result, err := h.service.SyncFromUserTracked(r.Context(), "sync_movie_user_tracked", "movie", parseFrequency(r), parseLimit(r), parseSkipAcceptable(r))
+	result, err := h.service.SyncFromUserTracked(r.Context(), "sync_movie_user_tracked", "movie", parseFrequency(r), parseLimit(r), parseSkipAcceptable(r), parseForce(r))
 	if err != nil {
 		h.log.Error("sync operation failed", "error", err, "path", r.URL.Path)
 		response.Error(w, http.StatusInternalServerError, err.Error())
@@ -86,7 +86,7 @@ func (h *Handler) SyncMovieUserTracked(w http.ResponseWriter, r *http.Request) {
 
 // SyncTVUserTracked syncs TMDB metadata for TV IDs tracked in tv_user.
 func (h *Handler) SyncTVUserTracked(w http.ResponseWriter, r *http.Request) {
-	result, err := h.service.SyncFromUserTracked(r.Context(), "sync_tv_user_tracked", "tv", parseFrequency(r), parseLimit(r), parseSkipAcceptable(r))
+	result, err := h.service.SyncFromUserTracked(r.Context(), "sync_tv_user_tracked", "tv", parseFrequency(r), parseLimit(r), parseSkipAcceptable(r), parseForce(r))
 	if err != nil {
 		h.log.Error("sync operation failed", "error", err, "path", r.URL.Path)
 		response.Error(w, http.StatusInternalServerError, err.Error())
@@ -198,6 +198,13 @@ func parseFrequency(r *http.Request) string {
 // When true, the acceptability filter is bypassed during sync.
 func parseSkipAcceptable(r *http.Request) bool {
 	b, _ := strconv.ParseBool(r.URL.Query().Get("skipAcceptable"))
+	return b
+}
+
+// parseForce lets an operator start a new tracked-title sync immediately,
+// bypassing the normal frequency guard. It is intended for metadata backfills.
+func parseForce(r *http.Request) bool {
+	b, _ := strconv.ParseBool(r.URL.Query().Get("force"))
 	return b
 }
 

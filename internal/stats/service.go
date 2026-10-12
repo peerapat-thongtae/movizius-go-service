@@ -46,6 +46,7 @@ func (s *Service) GetSummary(ctx context.Context, userID string, q SummaryQuery)
 	genreCounts := make(map[int64]int)
 	actorCounts := make(map[int64]int)
 	directorCounts := make(map[int64]int)
+	writerCounts := make(map[int64]int)
 	langCounts := make(map[string]int)
 
 	var episodesWatched, watchMinutes int
@@ -58,6 +59,7 @@ func (s *Service) GetSummary(ctx context.Context, userID string, q SummaryQuery)
 		if m.DirectorID != nil {
 			directorCounts[*m.DirectorID]++
 		}
+		addCounts(writerCounts, m.WriterIDs)
 		if m.OriginalLanguage != "" {
 			langCounts[m.OriginalLanguage]++
 		}
@@ -78,6 +80,7 @@ func (s *Service) GetSummary(ctx context.Context, userID string, q SummaryQuery)
 		addCounts(genreCounts, tv.Genres)
 		addCounts(actorCounts, tv.CastIDs)
 		addCounts(directorCounts, tv.CreatorIDs)
+		addCounts(writerCounts, tv.WriterIDs)
 		if tv.OriginalLanguage != "" {
 			langCounts[tv.OriginalLanguage]++
 		}
@@ -107,6 +110,7 @@ func (s *Service) GetSummary(ctx context.Context, userID string, q SummaryQuery)
 		TopGenres:    topIDCounts(genreCounts, topN),
 		TopActors:    topIDCounts(actorCounts, topN),
 		TopDirectors: topIDCounts(directorCounts, topN),
+		TopWriters:   topIDCounts(writerCounts, topN),
 		Languages:    topLanguageCounts(langCounts),
 	}
 	if myRatingCount > 0 {

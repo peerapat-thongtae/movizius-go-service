@@ -49,6 +49,33 @@ func creatorIDs(cb []CreatedBy) []int64 {
 	return ids
 }
 
+// writerIDs returns unique crew ids credited for writing. TMDB represents
+// writing with several job names, all of which are included in user stats.
+func writerIDs(c *Credits) []int64 {
+	if c == nil {
+		return nil
+	}
+	writerJobs := map[string]struct{}{
+		"Writer": {}, "Screenplay": {}, "Story": {}, "Teleplay": {}, "Characters": {},
+	}
+	seen := make(map[int64]struct{})
+	ids := make([]int64, 0)
+	for _, member := range c.Crew {
+		if member.Job == nil {
+			continue
+		}
+		if _, ok := writerJobs[*member.Job]; !ok {
+			continue
+		}
+		if _, ok := seen[member.ID]; ok {
+			continue
+		}
+		seen[member.ID] = struct{}{}
+		ids = append(ids, member.ID)
+	}
+	return ids
+}
+
 // tvKeywordIDs flattens a TV series' keywords wrapper into TMDB keyword ids.
 func tvKeywordIDs(k *TVKeywordsWrapper) []int64 {
 	if k == nil {
@@ -114,6 +141,7 @@ func tvToModel(data TVResponse, now time.Time) TV {
 		Keywords:            tvKeywordIDs(data.Keywords),
 		CastIDs:             topCastIDs(data.Credits, topCastN),
 		CreatorIDs:          creatorIDs(data.CreatedBy),
+		WriterIDs:           writerIDs(data.Credits),
 		Seasons:             seasons,
 		LastEpisodeToAir:    data.LastEpisodeToAir,
 		NextEpisodeToAir:    data.NextEpisodeToAir,

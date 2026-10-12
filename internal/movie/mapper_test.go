@@ -62,6 +62,29 @@ func TestFindDirectorIDAbsent(t *testing.T) {
 	}
 }
 
+func TestWriterIDs(t *testing.T) {
+	casts := &Casts{Crew: []Cast{
+		{ID: 1, Job: strPtr("Writer")},
+		{ID: 2, Job: strPtr("Screenplay")},
+		{ID: 1, Job: strPtr("Story")},
+		{ID: 3, Job: strPtr("Producer")},
+		{ID: 4, Job: nil},
+	}}
+	got := writerIDs(casts)
+	want := []int64{1, 2}
+	if len(got) != len(want) {
+		t.Fatalf("writerIDs() = %v, want %v", got, want)
+	}
+	for i, id := range want {
+		if got[i] != id {
+			t.Errorf("writerIDs()[%d] = %d, want %d", i, got[i], id)
+		}
+	}
+	if got := writerIDs(nil); got != nil {
+		t.Errorf("writerIDs(nil) = %v, want nil", got)
+	}
+}
+
 func TestKeywordIDs(t *testing.T) {
 	k := &KeywordsWrapper{Keywords: []Keyword{{ID: 10}, {ID: 20}}}
 	got := keywordIDs(k)

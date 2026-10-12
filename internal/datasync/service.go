@@ -53,7 +53,7 @@ func (s *SyncService) SyncByIDs(ctx context.Context, mediaType string, ids []int
 
 // SyncFromUserTracked syncs TMDB metadata for IDs in movie_user or tv_user using offset paging.
 // Loads the existing job by syncKey; creates a new one if not found yet.
-func (s *SyncService) SyncFromUserTracked(ctx context.Context, syncKey, mediaType, frequency string, limit int, skipAcceptable bool) (*SyncResult, error) {
+func (s *SyncService) SyncFromUserTracked(ctx context.Context, syncKey, mediaType, frequency string, limit int, skipAcceptable, force bool) (*SyncResult, error) {
 	meta, err := s.repo.GetSyncMeta(ctx, syncKey)
 	if err != nil && !isNotFound(err) {
 		return nil, err
@@ -80,7 +80,7 @@ func (s *SyncService) SyncFromUserTracked(ctx context.Context, syncKey, mediaTyp
 	}
 
 	// Frequency check: if completed, decide whether to re-run or return not_due.
-	if meta.Status == StatusCompleted {
+	if meta.Status == StatusCompleted && !force {
 		total := int(toInt64(meta.Meta["total"]))
 		nextSyncAt, due := nextSyncTime(meta.SyncDate, frequency)
 		if !due {
@@ -96,6 +96,9 @@ func (s *SyncService) SyncFromUserTracked(ctx context.Context, syncKey, mediaTyp
 			}, nil
 		}
 		// Period elapsed — reset for a new cycle.
+	}
+	if meta.Status == StatusCompleted {
+		// The scheduled period elapsed, or this is an explicit metadata backfill.
 		newTotal, err := s.countIDs(ctx, mediaType)
 		if err != nil {
 			return nil, err

@@ -48,6 +48,7 @@ type Summary struct {
 	TopGenres    []IDCount       `json:"top_genres"`
 	TopActors    []IDCount       `json:"top_actors"`
 	TopDirectors []IDCount       `json:"top_directors"` // movie directors + tv creators, merged by TMDB person id
+	TopWriters   []IDCount       `json:"top_writers"`
 	Languages    []LanguageCount `json:"languages"`
 }
 
@@ -59,6 +60,7 @@ type movieWatchRecord struct {
 	Genres           []int64  `bson:"genres"`
 	CastIDs          []int64  `bson:"cast_ids"`
 	DirectorID       *int64   `bson:"director_id"`
+	WriterIDs        []int64  `bson:"writer_ids"`
 	OriginalLanguage string   `bson:"original_language"`
 }
 
@@ -71,6 +73,7 @@ type tvWatchRecord struct {
 	Genres           []int64  `bson:"genres"`
 	CastIDs          []int64  `bson:"cast_ids"`
 	CreatorIDs       []int64  `bson:"creator_ids"`
+	WriterIDs        []int64  `bson:"writer_ids"`
 	OriginalLanguage string   `bson:"original_language"`
 	EpisodesInPeriod int      `bson:"episodes_in_period"`
 }

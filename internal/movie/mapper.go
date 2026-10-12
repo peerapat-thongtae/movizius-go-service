@@ -52,6 +52,33 @@ func findDirectorID(c *Casts) *int64 {
 	return nil
 }
 
+// writerIDs returns unique crew ids credited for writing. TMDB uses several
+// job names for writing credits, so all of them contribute to stats.
+func writerIDs(c *Casts) []int64 {
+	if c == nil {
+		return nil
+	}
+	writerJobs := map[string]struct{}{
+		"Writer": {}, "Screenplay": {}, "Story": {}, "Teleplay": {}, "Characters": {},
+	}
+	seen := make(map[int64]struct{})
+	ids := make([]int64, 0)
+	for _, member := range c.Crew {
+		if member.Job == nil {
+			continue
+		}
+		if _, ok := writerJobs[*member.Job]; !ok {
+			continue
+		}
+		if _, ok := seen[member.ID]; ok {
+			continue
+		}
+		seen[member.ID] = struct{}{}
+		ids = append(ids, member.ID)
+	}
+	return ids
+}
+
 // keywordIDs flattens a movie's keywords wrapper into a slice of TMDB keyword ids.
 func keywordIDs(k *KeywordsWrapper) []int64 {
 	if k == nil {
@@ -107,6 +134,7 @@ func movieToModel(data MovieResponse, now time.Time) Movie {
 		Keywords:            keywordIDs(data.Keywords),
 		CastIDs:             topCastIDs(data.Casts, topCastN),
 		DirectorID:          findDirectorID(data.Casts),
+		WriterIDs:           writerIDs(data.Casts),
 		UpdatedAt:           now,
 	}
 }
