@@ -43,6 +43,7 @@ type MovieResponse struct {
 	WatchProviders      *WatchProviderCountry `bson:"watch_providers"        json:"watch_providers"`
 	ReleaseDateTH       string                `bson:"release_date_th"        json:"release_date_th"`
 	Keywords            *KeywordsWrapper      `bson:"keywords"               json:"keywords"`
+	Recommendations     *Recommendations      `bson:"recommendations"        json:"recommendations"`
 	UpdatedAt           time.Time             `bson:"updated_at"             json:"-"`
 }
 
@@ -98,6 +99,26 @@ type Genre struct {
 // {"keywords":[{"id":..,"name":..}]}.
 type KeywordsWrapper struct {
 	Keywords []Keyword `bson:"keywords" json:"keywords"`
+}
+
+// Recommendations mirrors TMDB's appended recommendations response.
+type Recommendations struct {
+	Page         int              `bson:"page"          json:"page"`
+	TotalPages   int              `bson:"total_pages"   json:"total_pages"`
+	TotalResults int              `bson:"total_results" json:"total_results"`
+	Results      []Recommendation `bson:"results"       json:"results"`
+}
+
+// Recommendation is a compact movie or TV result returned by TMDB.
+type Recommendation struct {
+	ID           int64   `bson:"id"             json:"id"`
+	Title        string  `bson:"title"          json:"title,omitempty"`
+	Name         string  `bson:"name"           json:"name,omitempty"`
+	PosterPath   *string `bson:"poster_path"    json:"poster_path"`
+	ReleaseDate  string  `bson:"release_date"   json:"release_date,omitempty"`
+	FirstAirDate string  `bson:"first_air_date" json:"first_air_date,omitempty"`
+	VoteAverage  float64 `bson:"vote_average"   json:"vote_average"`
+	VoteCount    int64   `bson:"vote_count"     json:"vote_count"`
 }
 
 type Keyword struct {

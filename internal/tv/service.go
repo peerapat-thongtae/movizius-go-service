@@ -14,6 +14,7 @@ import (
 )
 
 const appendToResponse = "credits,videos,watch/providers,external_ids,keywords"
+const detailAppendToResponse = appendToResponse + ",recommendations"
 
 // randomSeenTTL is how long a served TV id stays excluded from that user's
 // future /tv/random calls. Rolling: refreshed on every call.
@@ -393,7 +394,7 @@ func (s *TVService) Trending(ctx context.Context, timeWindow string, page int) (
 // back entirely to TMDB. Returns tmdb.ErrNotFound if TMDB has no such series.
 func (s *TVService) GetByID(ctx context.Context, id int64) (*TVResponse, error) {
 	var detail TVResponse
-	if err := s.tmdb.GetTVDetail(ctx, id, appendToResponse, &detail); err != nil {
+	if err := s.tmdb.GetTVDetail(ctx, id, detailAppendToResponse, &detail); err != nil {
 		return nil, fmt.Errorf("tv service: get by id %d: %w", id, err)
 	}
 	detail.MediaType = "tv"

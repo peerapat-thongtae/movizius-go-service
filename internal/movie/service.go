@@ -14,6 +14,7 @@ import (
 )
 
 const appendToResponse = "casts,videos,watch/providers,release_dates,external_ids,keywords"
+const detailAppendToResponse = appendToResponse + ",recommendations"
 
 // seenTTL is how long a served movie id stays excluded from that user's
 // future /movie/random or /movie/recommendations calls. Rolling: refreshed
@@ -528,7 +529,7 @@ func (s *MovieService) Trending(ctx context.Context, timeWindow string, page int
 // if TMDB has no such movie.
 func (s *MovieService) GetByID(ctx context.Context, id int64) (*MovieResponse, error) {
 	var detail MovieResponse
-	if err := s.tmdb.GetMovieDetail(ctx, id, appendToResponse, &detail); err != nil {
+	if err := s.tmdb.GetMovieDetail(ctx, id, detailAppendToResponse, &detail); err != nil {
 		return nil, fmt.Errorf("movie service: get by id %d: %w", id, err)
 	}
 	detail.MediaType = "movie"

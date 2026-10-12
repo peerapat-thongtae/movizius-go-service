@@ -294,3 +294,41 @@ func (c *Client) GetTVDetail(ctx context.Context, id int64, appendKeys string, t
 	}
 	return nil
 }
+
+// GetPersonDetail fetches /person/{id} from TMDB.
+func (c *Client) GetPersonDetail(ctx context.Context, id int64, target any) error {
+	endpoint := fmt.Sprintf("%s/person/%d?language=en-US", baseURL, id)
+	return c.getPersonJSON(ctx, endpoint, fmt.Sprintf("/person/%d", id), target)
+}
+
+// GetPersonCombinedCredits fetches /person/{id}/combined_credits from TMDB.
+func (c *Client) GetPersonCombinedCredits(ctx context.Context, id int64, target any) error {
+	endpoint := fmt.Sprintf("%s/person/%d/combined_credits?language=en-US", baseURL, id)
+	return c.getPersonJSON(ctx, endpoint, fmt.Sprintf("/person/%d/combined_credits", id), target)
+}
+
+func (c *Client) getPersonJSON(ctx context.Context, endpoint, resource string, target any) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return fmt.Errorf("tmdb: build request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+c.accessToken)
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return fmt.Errorf("tmdb: request %s: %w", resource, err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusNotFound {
+		return fmt.Errorf("tmdb: %s: %w", resource, ErrNotFound)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("tmdb: %s returned status %d", resource, resp.StatusCode)
+	}
+	if err := json.NewDecoder(resp.Body).Decode(target); err != nil {
+		return fmt.Errorf("tmdb: decode %s: %w", resource, err)
+	}
+	return nil
+}

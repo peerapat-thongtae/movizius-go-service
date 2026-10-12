@@ -15,6 +15,7 @@ import (
 	"github.com/peera/movizius-go-service/internal/health"
 	"github.com/peera/movizius-go-service/internal/movie"
 	"github.com/peera/movizius-go-service/internal/notification"
+	"github.com/peera/movizius-go-service/internal/person"
 	"github.com/peera/movizius-go-service/internal/recommendation"
 	"github.com/peera/movizius-go-service/internal/shared/middleware"
 	"github.com/peera/movizius-go-service/internal/shared/response"
@@ -84,6 +85,7 @@ func New(deps Deps) http.Handler {
 	user.NewHandler(userService, deps.Logger).RegisterRoutes(mux, authSynced)
 	movie.NewHandler(movie.NewService(movieRepo, deps.TMDB, deps.Cache, recService), deps.Logger).RegisterRoutes(mux, authSynced)
 	tv.NewHandler(tv.NewService(tvRepo, deps.TMDB, deps.Cache, recService), deps.Logger).RegisterRoutes(mux, authSynced)
+	person.NewHandler(person.NewService(movieRepo, tvRepo, deps.TMDB), deps.Logger).RegisterRoutes(mux, authSynced)
 	recommendation.NewHandler(recService, deps.Logger).RegisterRoutes(mux, authSynced)
 	notification.NewHandler(notification.NewService(notification.NewRepository(deps.DB), deps.Firebase), deps.Logger).RegisterRoutes(mux, authSynced)
 	stats.NewHandler(stats.NewService(stats.NewRepository(deps.DB)), deps.Logger).RegisterRoutes(mux, authSynced)
