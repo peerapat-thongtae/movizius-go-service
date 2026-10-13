@@ -18,10 +18,73 @@ type Repository interface {
 	// watched in [from, to), with EpisodesInPeriod counting only episodes in
 	// that range. Both bounds nil means unbounded.
 	FindWatchedTV(ctx context.Context, userID string, from, to *time.Time) ([]tvWatchRecord, error)
-	FindWatchedTitlesByPerson(ctx context.Context, userID string, personID int64, role string) ([]PersonTitle, error)
+	GetLibrarySnapshot(ctx context.Context, userID string) (LibrarySnapshot, Completion, error)
+	FindWatchedTitlesByPerson(ctx context.Context, userID string, personID int64, role, mediaType string, from, to *time.Time) ([]PersonTitle, error)
 }
 
-func (r *mongoRepository) FindWatchedTitlesByPerson(ctx context.Context, userID string, personID int64, role string) ([]PersonTitle, error) {
+func (r *mongoRepository) GetLibrarySnapshot(ctx context.Context, userID string) (LibrarySnapshot, Completion, error) {
+	moviesToWatch, err := r.db.Collection("movie_user").CountDocuments(ctx, bson.M{
+		"user_id":    userID,
+		"watched_at": nil,
+	})
+	if err != nil {
+		return LibrarySnapshot{}, Completion{}, fmt.Errorf("stats: count movie watchlist: %w", err)
+	}
+	moviesCompleted, err := r.db.Collection("movie_user").CountDocuments(ctx, bson.M{
+		"user_id":    userID,
+		"watched_at": bson.M{"$ne": nil},
+	})
+	if err != nil {
+		return LibrarySnapshot{}, Completion{}, fmt.Errorf("stats: count completed movies: %w", err)
+	}
+
+	pipeline := bson.A{
+		bson.M{"$match": bson.M{"user_id": userID}},
+		bson.M{"$lookup": bson.M{"from": "tv", "localField": "id", "foreignField": "id", "as": "tv"}},
+		bson.M{"$unwind": "$tv"},
+		bson.M{"$addFields": bson.M{"_watched_count": bson.M{"$size": bson.M{"$ifNull": bson.A{"$episode_watched", bson.A{}}}}}},
+		bson.M{"$group": bson.M{
+			"_id":      nil,
+			"to_watch": bson.M{"$sum": bson.M{"$cond": bson.A{bson.M{"$eq": bson.A{"$_watched_count", 0}}, 1, 0}}},
+			"completed": bson.M{"$sum": bson.M{"$cond": bson.A{bson.M{"$and": bson.A{
+				bson.M{"$gt": bson.A{"$tv.number_of_episodes", 0}},
+				bson.M{"$gte": bson.A{"$_watched_count", "$tv.number_of_episodes"}},
+				bson.M{"$ne": bson.A{"$tv.status", "Returning Series"}},
+			}}, 1, 0}}},
+			"in_progress": bson.M{"$sum": bson.M{"$cond": bson.A{bson.M{"$and": bson.A{
+				bson.M{"$gt": bson.A{"$_watched_count", 0}},
+				bson.M{"$or": bson.A{
+					bson.M{"$eq": bson.A{"$tv.number_of_episodes", 0}},
+					bson.M{"$lt": bson.A{"$_watched_count", "$tv.number_of_episodes"}},
+					bson.M{"$eq": bson.A{"$tv.status", "Returning Series"}},
+				}},
+			}}, 1, 0}}},
+		}},
+	}
+	cursor, err := r.db.Collection("tv_user").Aggregate(ctx, pipeline)
+	if err != nil {
+		return LibrarySnapshot{}, Completion{}, fmt.Errorf("stats: aggregate tv library status: %w", err)
+	}
+	defer cursor.Close(ctx)
+	var tvResult []struct {
+		ToWatch    int `bson:"to_watch"`
+		Completed  int `bson:"completed"`
+		InProgress int `bson:"in_progress"`
+	}
+	if err := cursor.All(ctx, &tvResult); err != nil {
+		return LibrarySnapshot{}, Completion{}, fmt.Errorf("stats: decode tv library status: %w", err)
+	}
+	snapshot := LibrarySnapshot{MoviesToWatch: int(moviesToWatch)}
+	completion := Completion{Movies: int(moviesCompleted)}
+	if len(tvResult) > 0 {
+		snapshot.TVToWatch = tvResult[0].ToWatch
+		snapshot.TVInProgress = tvResult[0].InProgress
+		completion.TVShows = tvResult[0].Completed
+	}
+	return snapshot, completion, nil
+}
+
+func (r *mongoRepository) FindWatchedTitlesByPerson(ctx context.Context, userID string, personID int64, role, mediaType string, from, to *time.Time) ([]PersonTitle, error) {
 	movieMatch := bson.M{"movie.cast_ids": personID}
 	tvMatch := bson.M{"tv.cast_ids": personID}
 	if role == "director" {
@@ -30,7 +93,7 @@ func (r *mongoRepository) FindWatchedTitlesByPerson(ctx context.Context, userID 
 	}
 
 	moviePipeline := bson.A{
-		bson.M{"$match": bson.M{"user_id": userID, "watched_at": bson.M{"$exists": true, "$ne": nil}}},
+		bson.M{"$match": bson.M{"user_id": userID, "watched_at": watchedAtMatch(from, to)}},
 		bson.M{"$lookup": bson.M{"from": "movie", "localField": "id", "foreignField": "id", "as": "movie"}},
 		bson.M{"$unwind": "$movie"},
 		bson.M{"$match": movieMatch},
@@ -39,6 +102,7 @@ func (r *mongoRepository) FindWatchedTitlesByPerson(ctx context.Context, userID 
 	tvPipeline := bson.A{
 		bson.M{"$match": bson.M{"user_id": userID}},
 		bson.M{"$unwind": "$episode_watched"},
+		bson.M{"$match": bson.M{"episode_watched.watched_at": watchedAtMatch(from, to)}},
 		bson.M{"$group": bson.M{"_id": "$id", "watched_at": bson.M{"$max": "$episode_watched.watched_at"}}},
 		bson.M{"$lookup": bson.M{"from": "tv", "localField": "_id", "foreignField": "id", "as": "tv"}},
 		bson.M{"$unwind": "$tv"},
@@ -48,9 +112,13 @@ func (r *mongoRepository) FindWatchedTitlesByPerson(ctx context.Context, userID 
 
 	results := make([]PersonTitle, 0)
 	for _, query := range []struct {
+		mediaType  string
 		collection string
 		pipeline   bson.A
-	}{{"movie_user", moviePipeline}, {"tv_user", tvPipeline}} {
+	}{{"movie", "movie_user", moviePipeline}, {"tv", "tv_user", tvPipeline}} {
+		if mediaType != "all" && mediaType != query.mediaType {
+			continue
+		}
 		cursor, err := r.db.Collection(query.collection).Aggregate(ctx, query.pipeline)
 		if err != nil {
 			return nil, fmt.Errorf("stats: aggregate person titles: %w", err)
@@ -107,6 +175,7 @@ func (r *mongoRepository) FindWatchedMovies(ctx context.Context, userID string, 
 			"cast_ids":          "$movie.cast_ids",
 			"director_id":       "$movie.director_id",
 			"original_language": "$movie.original_language",
+			"release_date":      "$movie.release_date",
 		}},
 	}
 
@@ -150,6 +219,7 @@ func (r *mongoRepository) FindWatchedTV(ctx context.Context, userID string, from
 			"cast_ids":           "$tv.cast_ids",
 			"creator_ids":        "$tv.creator_ids",
 			"original_language":  "$tv.original_language",
+			"first_air_date":     "$tv.first_air_date",
 			"episodes_in_period": "$episodesInPeriod",
 		}},
 	}

@@ -3,7 +3,9 @@ package stats
 import (
 	"context"
 	"fmt"
+	"math"
 	"sort"
+	"strconv"
 	"sync"
 
 	"github.com/peera/movizius-go-service/internal/movie"
@@ -59,6 +61,9 @@ func (s *Service) GetSummary(ctx context.Context, userID string, q SummaryQuery)
 	var episodesWatched, watchMinutes int
 	var myRatingSum, othersRatingSum float64
 	var myRatingCount, othersRatingCount int
+	ratingCounts := make(map[int]int)
+	communityRatingCounts := make(map[int]int)
+	eraCounts := make(map[string]int)
 
 	for _, m := range movies {
 		addCounts(genreCounts, m.Genres)
@@ -75,10 +80,13 @@ func (s *Service) GetSummary(ctx context.Context, userID string, q SummaryQuery)
 		if m.Rating != nil {
 			myRatingSum += *m.Rating
 			myRatingCount++
+			ratingCounts[clampedRoundedRating(*m.Rating)]++
 		}
+		addReleaseEra(eraCounts, m.ReleaseDate)
 		if m.VoteAverage != nil {
 			othersRatingSum += *m.VoteAverage
 			othersRatingCount++
+			communityRatingCounts[clampedRoundedRating(*m.VoteAverage)]++
 		}
 	}
 
@@ -94,11 +102,28 @@ func (s *Service) GetSummary(ctx context.Context, userID string, q SummaryQuery)
 		if tv.Rating != nil {
 			myRatingSum += *tv.Rating
 			myRatingCount++
+			ratingCounts[clampedRoundedRating(*tv.Rating)]++
 		}
+		addReleaseEra(eraCounts, tv.FirstAirDate)
 		if tv.VoteAverage != nil {
 			othersRatingSum += *tv.VoteAverage
 			othersRatingCount++
+			communityRatingCounts[clampedRoundedRating(*tv.VoteAverage)]++
 		}
+	}
+
+	snapshot, completion, err := s.repo.GetLibrarySnapshot(ctx, userID)
+	if err != nil {
+		return Summary{}, fmt.Errorf("stats: get library snapshot: %w", err)
+	}
+	if q.MediaType == "movie" {
+		snapshot.TVToWatch = 0
+		snapshot.TVInProgress = 0
+		completion.TVShows = 0
+	}
+	if q.MediaType == "tv" {
+		snapshot.MoviesToWatch = 0
+		completion.Movies = 0
 	}
 
 	summary := Summary{
@@ -112,10 +137,15 @@ func (s *Service) GetSummary(ctx context.Context, userID string, q SummaryQuery)
 		Ratings: Ratings{
 			MyRatedCount: myRatingCount,
 		},
-		TopGenres:    topIDCounts(genreCounts, topN),
-		TopActors:    topIDCounts(actorCounts, topN),
-		TopDirectors: topIDCounts(directorCounts, topN),
-		Languages:    topLanguageCounts(langCounts),
+		TopGenres:                   topIDCounts(genreCounts, topN),
+		TopActors:                   topIDCounts(actorCounts, topN),
+		TopDirectors:                topIDCounts(directorCounts, topN),
+		Languages:                   topLanguageCounts(langCounts),
+		RatingDistribution:          ratingDistribution(ratingCounts),
+		CommunityRatingDistribution: ratingDistribution(communityRatingCounts),
+		LibrarySnapshot:             snapshot,
+		Completion:                  completion,
+		FavouriteReleaseEras:        topReleaseEras(eraCounts, 5),
 	}
 	if myRatingCount > 0 {
 		avg := myRatingSum / float64(myRatingCount)
@@ -131,21 +161,55 @@ func (s *Service) GetSummary(ctx context.Context, userID string, q SummaryQuery)
 	return summary, nil
 }
 
+func clampedRoundedRating(rating float64) int {
+	return max(1, min(10, int(math.Round(rating))))
+}
+
+func addReleaseEra(counts map[string]int, date string) {
+	if len(date) < 4 {
+		return
+	}
+	year, err := strconv.Atoi(date[:4])
+	if err != nil || year < 1880 || year > 2100 {
+		return
+	}
+	counts[fmt.Sprintf("%ds", (year/10)*10)]++
+}
+
+func ratingDistribution(counts map[int]int) []RatingBucket {
+	buckets := make([]RatingBucket, 0, len(counts))
+	for rating := 1; rating <= 10; rating++ {
+		if count := counts[rating]; count > 0 {
+			buckets = append(buckets, RatingBucket{Rating: rating, Count: count})
+		}
+	}
+	return buckets
+}
+
+func topReleaseEras(counts map[string]int, limit int) []ReleaseEra {
+	eras := make([]ReleaseEra, 0, len(counts))
+	for decade, count := range counts {
+		eras = append(eras, ReleaseEra{Decade: decade, Count: count})
+	}
+	sort.Slice(eras, func(i, j int) bool {
+		if eras[i].Count != eras[j].Count {
+			return eras[i].Count > eras[j].Count
+		}
+		return eras[i].Decade > eras[j].Decade
+	})
+	if len(eras) > limit {
+		eras = eras[:limit]
+	}
+	return eras
+}
+
 // GetWatchedTitlesByPerson returns the standard full movie and TV payloads
 // for titles that contributed to a person's count in the user's stats.
-func (s *Service) GetWatchedTitlesByPerson(ctx context.Context, userID string, personID int64, role, mediaType string) (PersonTitles, error) {
-	titles, err := s.repo.FindWatchedTitlesByPerson(ctx, userID, personID, role)
+func (s *Service) GetWatchedTitlesByPerson(ctx context.Context, userID string, personID int64, role string, q SummaryQuery) (PersonTitles, error) {
+	from, to := q.dateRange()
+	titles, err := s.repo.FindWatchedTitlesByPerson(ctx, userID, personID, role, q.MediaType, from, to)
 	if err != nil {
 		return PersonTitles{}, fmt.Errorf("stats: get person titles: %w", err)
-	}
-	if mediaType != "all" {
-		filtered := titles[:0]
-		for _, title := range titles {
-			if title.MediaType == mediaType {
-				filtered = append(filtered, title)
-			}
-		}
-		titles = filtered
 	}
 	sort.Slice(titles, func(i, j int) bool { return titles[i].WatchedAt.After(titles[j].WatchedAt) })
 	if len(titles) > 30 {

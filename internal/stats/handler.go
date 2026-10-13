@@ -43,15 +43,12 @@ func (h *Handler) GetPersonTitles(w http.ResponseWriter, r *http.Request) {
 		response.Error(w, http.StatusBadRequest, "role must be actor or director")
 		return
 	}
-	mediaType := r.URL.Query().Get("media_type")
-	if mediaType == "" {
-		mediaType = "all"
-	}
-	if mediaType != "all" && mediaType != "movie" && mediaType != "tv" {
-		response.Error(w, http.StatusBadRequest, "media_type must be all, movie, or tv")
+	q, err := summaryQueryFromRequest(r)
+	if err != nil {
+		response.Error(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	titles, err := h.service.GetWatchedTitlesByPerson(r.Context(), userID, personID, role, mediaType)
+	titles, err := h.service.GetWatchedTitlesByPerson(r.Context(), userID, personID, role, q)
 	if err != nil {
 		h.log.Error("failed to get person watch history", "error", err, "user", userID, "person", personID)
 		response.Error(w, http.StatusInternalServerError, "failed to get person watch history")

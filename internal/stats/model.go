@@ -32,6 +32,32 @@ type Ratings struct {
 	OthersAverageRating *float64 `json:"others_average_rating"`
 }
 
+// RatingBucket is the number of titles given a rounded personal rating.
+type RatingBucket struct {
+	Rating int `json:"rating"`
+	Count  int `json:"count"`
+}
+
+// LibrarySnapshot describes the user's current queue, independent of the
+// requested time range.
+type LibrarySnapshot struct {
+	MoviesToWatch int `json:"movies_to_watch"`
+	TVToWatch     int `json:"tv_to_watch"`
+	TVInProgress  int `json:"tv_in_progress"`
+}
+
+// Completion describes titles fully completed in the user's library.
+type Completion struct {
+	Movies  int `json:"movies"`
+	TVShows int `json:"tv_shows"`
+}
+
+// ReleaseEra groups watched titles by decade of their release or first-air date.
+type ReleaseEra struct {
+	Decade string `json:"decade"`
+	Count  int    `json:"count"`
+}
+
 // IDCount pairs a TMDB entity id (genre, person) with how many watched titles
 // referenced it. Person entries also include their display name so the client
 // does not need to fan out into one request per person.
@@ -50,13 +76,18 @@ type LanguageCount struct {
 
 // Summary is the response shape for GET /stats/summary.
 type Summary struct {
-	Period       Period          `json:"period"`
-	Totals       Totals          `json:"totals"`
-	Ratings      Ratings         `json:"ratings"`
-	TopGenres    []IDCount       `json:"top_genres"`
-	TopActors    []IDCount       `json:"top_actors"`
-	TopDirectors []IDCount       `json:"top_directors"` // movie directors + tv creators, merged by TMDB person id
-	Languages    []LanguageCount `json:"languages"`
+	Period                      Period          `json:"period"`
+	Totals                      Totals          `json:"totals"`
+	Ratings                     Ratings         `json:"ratings"`
+	RatingDistribution          []RatingBucket  `json:"rating_distribution"`
+	CommunityRatingDistribution []RatingBucket  `json:"community_rating_distribution"`
+	LibrarySnapshot             LibrarySnapshot `json:"library_snapshot"`
+	Completion                  Completion      `json:"completion"`
+	FavouriteReleaseEras        []ReleaseEra    `json:"favourite_release_eras"`
+	TopGenres                   []IDCount       `json:"top_genres"`
+	TopActors                   []IDCount       `json:"top_actors"`
+	TopDirectors                []IDCount       `json:"top_directors"` // movie directors + tv creators, merged by TMDB person id
+	Languages                   []LanguageCount `json:"languages"`
 }
 
 // PersonTitle is a watched title connected to a top actor or director.
@@ -86,6 +117,7 @@ type movieWatchRecord struct {
 	CastIDs          []int64  `bson:"cast_ids"`
 	DirectorID       *int64   `bson:"director_id"`
 	OriginalLanguage string   `bson:"original_language"`
+	ReleaseDate      string   `bson:"release_date"`
 }
 
 // tvWatchRecord is one TV show with at least one episode watched in the
@@ -98,5 +130,6 @@ type tvWatchRecord struct {
 	CastIDs          []int64  `bson:"cast_ids"`
 	CreatorIDs       []int64  `bson:"creator_ids"`
 	OriginalLanguage string   `bson:"original_language"`
+	FirstAirDate     string   `bson:"first_air_date"`
 	EpisodesInPeriod int      `bson:"episodes_in_period"`
 }
