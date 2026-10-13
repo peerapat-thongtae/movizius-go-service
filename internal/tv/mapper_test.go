@@ -37,6 +37,31 @@ func TestTopCastIDsNil(t *testing.T) {
 	}
 }
 
+func TestTopCastIDsExcludesVoiceRoles(t *testing.T) {
+	credits := &Credits{Cast: []CastMember{
+		{ID: 1, Order: intPtr(0), Character: strPtr("Hero (voice)")},
+		{ID: 2, Order: intPtr(1), Character: strPtr("Detective")},
+		{ID: 3, Order: intPtr(2), Character: strPtr("Narrator")},
+	}}
+	got := topCastIDs(credits, 5)
+	want := []int64{2, 3}
+	if len(got) != len(want) {
+		t.Fatalf("topCastIDs() = %v, want %v", got, want)
+	}
+	for i, id := range want {
+		if got[i] != id {
+			t.Errorf("topCastIDs()[%d] = %d, want %d", i, got[i], id)
+		}
+	}
+}
+
+func TestCastIDsSkipsAnime(t *testing.T) {
+	credits := &Credits{Cast: []CastMember{{ID: 1, Order: intPtr(0)}}}
+	if got := castIDs(credits, true); got != nil {
+		t.Errorf("castIDs(anime) = %v, want nil", got)
+	}
+}
+
 func TestCreatorIDs(t *testing.T) {
 	cb := []CreatedBy{{ID: 1}, {ID: 2}}
 	got := creatorIDs(cb)
@@ -45,28 +70,6 @@ func TestCreatorIDs(t *testing.T) {
 	}
 	if got := creatorIDs(nil); got != nil {
 		t.Errorf("creatorIDs(nil) = %v, want nil", got)
-	}
-}
-
-func TestWriterIDs(t *testing.T) {
-	credits := &Credits{Crew: []CastMember{
-		{ID: 1, Job: strPtr("Writer")},
-		{ID: 2, Job: strPtr("Teleplay")},
-		{ID: 1, Job: strPtr("Characters")},
-		{ID: 3, Job: strPtr("Producer")},
-	}}
-	got := writerIDs(credits)
-	want := []int64{1, 2}
-	if len(got) != len(want) {
-		t.Fatalf("writerIDs() = %v, want %v", got, want)
-	}
-	for i, id := range want {
-		if got[i] != id {
-			t.Errorf("writerIDs()[%d] = %d, want %d", i, got[i], id)
-		}
-	}
-	if got := writerIDs(nil); got != nil {
-		t.Errorf("writerIDs(nil) = %v, want nil", got)
 	}
 }
 

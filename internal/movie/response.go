@@ -47,12 +47,14 @@ type MovieResponse struct {
 	UpdatedAt           time.Time             `bson:"updated_at"             json:"-"`
 }
 
-// UnmarshalJSON remaps TMDB's "watch/providers" key to the struct's WatchProviders field.
+// UnmarshalJSON remaps TMDB's non-Go-compatible / differently named append
+// response keys while preserving the API shape served to frontend clients.
 func (r *MovieResponse) UnmarshalJSON(data []byte) error {
 	type Alias MovieResponse
 	var raw struct {
 		Alias
 		WatchProvidersIn *WatchProviders `json:"watch/providers"`
+		Credits          *Casts          `json:"credits"`
 	}
 	if err := json.Unmarshal(data, &raw); err != nil {
 		return err
@@ -60,6 +62,9 @@ func (r *MovieResponse) UnmarshalJSON(data []byte) error {
 	*r = MovieResponse(raw.Alias)
 	if raw.WatchProvidersIn != nil {
 		r.WatchProviders = raw.WatchProvidersIn.Results["TH"]
+	}
+	if raw.Credits != nil {
+		r.Casts = raw.Credits
 	}
 	return nil
 }

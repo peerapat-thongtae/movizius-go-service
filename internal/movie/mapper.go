@@ -2,6 +2,7 @@ package movie
 
 import (
 	"sort"
+	"strings"
 	"time"
 )
 
@@ -15,8 +16,16 @@ func topCastIDs(c *Casts, n int) []int64 {
 	if c == nil || len(c.Cast) == 0 {
 		return nil
 	}
-	sorted := make([]Cast, len(c.Cast))
-	copy(sorted, c.Cast)
+	sorted := make([]Cast, 0, len(c.Cast))
+	for _, member := range c.Cast {
+		if member.Character != nil && strings.Contains(strings.ToLower(*member.Character), "voice") {
+			continue
+		}
+		sorted = append(sorted, member)
+	}
+	if len(sorted) == 0 {
+		return nil
+	}
 	sort.SliceStable(sorted, func(i, j int) bool {
 		oi, oj := sorted[i].Order, sorted[j].Order
 		if oi == nil {
@@ -37,6 +46,15 @@ func topCastIDs(c *Casts, n int) []int64 {
 	return ids
 }
 
+func isAnimation(genres []Genre) bool {
+	for _, genre := range genres {
+		if genre.ID == 16 { // TMDB Animation
+			return true
+		}
+	}
+	return false
+}
+
 // findDirectorID returns the id of the first crew member whose job is
 // "Director", or nil if none is found.
 func findDirectorID(c *Casts) *int64 {
@@ -50,33 +68,6 @@ func findDirectorID(c *Casts) *int64 {
 		}
 	}
 	return nil
-}
-
-// writerIDs returns unique crew ids credited for writing. TMDB uses several
-// job names for writing credits, so all of them contribute to stats.
-func writerIDs(c *Casts) []int64 {
-	if c == nil {
-		return nil
-	}
-	writerJobs := map[string]struct{}{
-		"Writer": {}, "Screenplay": {}, "Story": {}, "Teleplay": {}, "Characters": {},
-	}
-	seen := make(map[int64]struct{})
-	ids := make([]int64, 0)
-	for _, member := range c.Crew {
-		if member.Job == nil {
-			continue
-		}
-		if _, ok := writerJobs[*member.Job]; !ok {
-			continue
-		}
-		if _, ok := seen[member.ID]; ok {
-			continue
-		}
-		seen[member.ID] = struct{}{}
-		ids = append(ids, member.ID)
-	}
-	return ids
 }
 
 // keywordIDs flattens a movie's keywords wrapper into a slice of TMDB keyword ids.
@@ -132,11 +123,17 @@ func movieToModel(data MovieResponse, now time.Time) Movie {
 		Runtime:             &runtime,
 		WatchProviders:      extractProviderIDs(data.WatchProviders),
 		Keywords:            keywordIDs(data.Keywords),
-		CastIDs:             topCastIDs(data.Casts, topCastN),
+		CastIDs:             castIDs(data.Casts, data.Genres),
 		DirectorID:          findDirectorID(data.Casts),
-		WriterIDs:           writerIDs(data.Casts),
 		UpdatedAt:           now,
 	}
+}
+
+func castIDs(c *Casts, genres []Genre) []int64 {
+	if isAnimation(genres) {
+		return nil
+	}
+	return topCastIDs(c, topCastN)
 }
 
 // overlayDBFields lets the cached DB record win over the freshly-fetched TMDB

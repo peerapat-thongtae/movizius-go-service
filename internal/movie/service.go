@@ -13,7 +13,7 @@ import (
 	"github.com/peera/movizius-go-service/pkg/tmdb"
 )
 
-const appendToResponse = "casts,videos,watch/providers,release_dates,external_ids,keywords"
+const appendToResponse = "credits,videos,watch/providers,release_dates,external_ids,keywords"
 const detailAppendToResponse = appendToResponse + ",recommendations"
 
 // seenTTL is how long a served movie id stays excluded from that user's

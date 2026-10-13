@@ -32,7 +32,6 @@ type TV struct {
 	Keywords            []int64            `bson:"keywords"                   json:"keywords"`
 	CastIDs             []int64            `bson:"cast_ids"                   json:"cast_ids"`
 	CreatorIDs          []int64            `bson:"creator_ids"                json:"creator_ids"`
-	WriterIDs           []int64            `bson:"writer_ids"                 json:"writer_ids"`
 	Seasons             []any              `bson:"seasons"                    json:"seasons"`
 	LastEpisodeToAir    any                `bson:"last_episode_to_air"        json:"last_episode_to_air"`
 	NextEpisodeToAir    any                `bson:"next_episode_to_air"        json:"next_episode_to_air"`

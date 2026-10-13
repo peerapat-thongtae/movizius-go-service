@@ -410,6 +410,10 @@ func (r *mongoTVRepository) UpsertDetail(ctx context.Context, data TVResponse) e
 	model := tvToModel(data, now)
 	update := bson.M{
 		"$set": bsonutil.StructToBsonM(model, "_id", "id", "vote_average", "vote_count"),
+		"$unset": bson.M{
+			"on_screen_cast_ids": "",
+			"writer_ids":         "",
+		},
 		// vote_average and vote_count are owned by IMDB sync; only set on first insert.
 		"$setOnInsert": bson.M{
 			"vote_average": data.VoteAverage,

@@ -30,7 +30,6 @@ type Movie struct {
 	Keywords            []int64            `bson:"keywords"                     json:"keywords"`
 	CastIDs             []int64            `bson:"cast_ids"                     json:"cast_ids"`
 	DirectorID          *int64             `bson:"director_id,omitempty"        json:"director_id,omitempty"`
-	WriterIDs           []int64            `bson:"writer_ids"                   json:"writer_ids"`
 	UpdatedAt           time.Time          `bson:"updated_at"                   json:"-"`
 }
 

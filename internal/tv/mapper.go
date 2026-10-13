@@ -2,6 +2,7 @@ package tv
 
 import (
 	"sort"
+	"strings"
 	"time"
 )
 
@@ -15,8 +16,16 @@ func topCastIDs(c *Credits, n int) []int64 {
 	if c == nil || len(c.Cast) == 0 {
 		return nil
 	}
-	sorted := make([]CastMember, len(c.Cast))
-	copy(sorted, c.Cast)
+	sorted := make([]CastMember, 0, len(c.Cast))
+	for _, member := range c.Cast {
+		if member.Character != nil && strings.Contains(strings.ToLower(*member.Character), "voice") {
+			continue
+		}
+		sorted = append(sorted, member)
+	}
+	if len(sorted) == 0 {
+		return nil
+	}
 	sort.SliceStable(sorted, func(i, j int) bool {
 		oi, oj := sorted[i].Order, sorted[j].Order
 		if oi == nil {
@@ -37,6 +46,13 @@ func topCastIDs(c *Credits, n int) []int64 {
 	return ids
 }
 
+func castIDs(c *Credits, isAnime bool) []int64 {
+	if isAnime {
+		return nil
+	}
+	return topCastIDs(c, topCastN)
+}
+
 // creatorIDs flattens a TV series' created_by list into TMDB person ids.
 func creatorIDs(cb []CreatedBy) []int64 {
 	if len(cb) == 0 {
@@ -45,33 +61,6 @@ func creatorIDs(cb []CreatedBy) []int64 {
 	ids := make([]int64, len(cb))
 	for i, c := range cb {
 		ids[i] = c.ID
-	}
-	return ids
-}
-
-// writerIDs returns unique crew ids credited for writing. TMDB represents
-// writing with several job names, all of which are included in user stats.
-func writerIDs(c *Credits) []int64 {
-	if c == nil {
-		return nil
-	}
-	writerJobs := map[string]struct{}{
-		"Writer": {}, "Screenplay": {}, "Story": {}, "Teleplay": {}, "Characters": {},
-	}
-	seen := make(map[int64]struct{})
-	ids := make([]int64, 0)
-	for _, member := range c.Crew {
-		if member.Job == nil {
-			continue
-		}
-		if _, ok := writerJobs[*member.Job]; !ok {
-			continue
-		}
-		if _, ok := seen[member.ID]; ok {
-			continue
-		}
-		seen[member.ID] = struct{}{}
-		ids = append(ids, member.ID)
 	}
 	return ids
 }
@@ -139,9 +128,8 @@ func tvToModel(data TVResponse, now time.Time) TV {
 		Genres:              genres,
 		ProductionCompanies: companies,
 		Keywords:            tvKeywordIDs(data.Keywords),
-		CastIDs:             topCastIDs(data.Credits, topCastN),
+		CastIDs:             castIDs(data.Credits, data.IsAnime),
 		CreatorIDs:          creatorIDs(data.CreatedBy),
-		WriterIDs:           writerIDs(data.Credits),
 		Seasons:             seasons,
 		LastEpisodeToAir:    data.LastEpisodeToAir,
 		NextEpisodeToAir:    data.NextEpisodeToAir,
