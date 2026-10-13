@@ -148,6 +148,15 @@ func (s *MovieService) Discover(ctx context.Context, userID string, q DiscoverQu
 	return results, total, nil
 }
 
+// GetByIDs returns the same enriched response shape as Discover for a known
+// set of movie IDs.
+func (s *MovieService) GetByIDs(ctx context.Context, ids []int64) ([]MovieResponse, error) {
+	if len(ids) == 0 {
+		return []MovieResponse{}, nil
+	}
+	return s.enrichMovieIDs(ctx, ids)
+}
+
 // enrichMovieIDs fetches full TMDB detail for each id in parallel, then
 // overlays cached DB fields (the DB is the source of truth for the fields it
 // stores — popularity, vote_average/vote_count, and the stored catalog

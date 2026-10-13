@@ -83,12 +83,14 @@ func New(deps Deps) http.Handler {
 	recService := recommendation.NewService(recommendation.NewRepository(deps.DB), movieRepo, tvRepo, deps.RecommendationConfig, deps.Logger)
 
 	user.NewHandler(userService, deps.Logger).RegisterRoutes(mux, authSynced)
-	movie.NewHandler(movie.NewService(movieRepo, deps.TMDB, deps.Cache, recService), deps.Logger).RegisterRoutes(mux, authSynced)
-	tv.NewHandler(tv.NewService(tvRepo, deps.TMDB, deps.Cache, recService), deps.Logger).RegisterRoutes(mux, authSynced)
+	movieService := movie.NewService(movieRepo, deps.TMDB, deps.Cache, recService)
+	tvService := tv.NewService(tvRepo, deps.TMDB, deps.Cache, recService)
+	movie.NewHandler(movieService, deps.Logger).RegisterRoutes(mux, authSynced)
+	tv.NewHandler(tvService, deps.Logger).RegisterRoutes(mux, authSynced)
 	person.NewHandler(person.NewService(movieRepo, tvRepo, deps.TMDB), deps.Logger).RegisterRoutes(mux, authSynced)
 	recommendation.NewHandler(recService, deps.Logger).RegisterRoutes(mux, authSynced)
 	notification.NewHandler(notification.NewService(notification.NewRepository(deps.DB), deps.Firebase), deps.Logger).RegisterRoutes(mux, authSynced)
-	stats.NewHandler(stats.NewService(stats.NewRepository(deps.DB)), deps.Logger).RegisterRoutes(mux, authSynced)
+	stats.NewHandler(stats.NewService(stats.NewRepository(deps.DB), deps.TMDB, movieService, tvService), deps.Logger).RegisterRoutes(mux, authSynced)
 
 	datasync.NewHandler(datasync.NewService(
 		datasync.NewRepository(deps.DB),

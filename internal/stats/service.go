@@ -4,6 +4,11 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"sync"
+
+	"github.com/peera/movizius-go-service/internal/movie"
+	"github.com/peera/movizius-go-service/internal/tv"
+	"github.com/peera/movizius-go-service/pkg/tmdb"
 )
 
 // topN bounds how many entries each breakdown list (genres/actors/directors)
@@ -12,12 +17,15 @@ const topN = 10
 
 // Service computes watch-history summaries from a user's tracked movies/TV.
 type Service struct {
-	repo Repository
+	repo   Repository
+	tmdb   *tmdb.Client
+	movies *movie.MovieService
+	tv     *tv.TVService
 }
 
 // NewService constructs a Service.
-func NewService(repo Repository) *Service {
-	return &Service{repo: repo}
+func NewService(repo Repository, tmdbClient *tmdb.Client, movies *movie.MovieService, tvService *tv.TVService) *Service {
+	return &Service{repo: repo, tmdb: tmdbClient, movies: movies, tv: tvService}
 }
 
 // GetSummary computes the watch-history Summary for a user over the period
@@ -117,8 +125,83 @@ func (s *Service) GetSummary(ctx context.Context, userID string, q SummaryQuery)
 		avg := othersRatingSum / float64(othersRatingCount)
 		summary.Ratings.OthersAverageRating = &avg
 	}
+	s.enrichPersonNames(ctx, summary.TopActors)
+	s.enrichPersonNames(ctx, summary.TopDirectors)
 
 	return summary, nil
+}
+
+// GetWatchedTitlesByPerson returns the standard full movie and TV payloads
+// for titles that contributed to a person's count in the user's stats.
+func (s *Service) GetWatchedTitlesByPerson(ctx context.Context, userID string, personID int64, role, mediaType string) (PersonTitles, error) {
+	titles, err := s.repo.FindWatchedTitlesByPerson(ctx, userID, personID, role)
+	if err != nil {
+		return PersonTitles{}, fmt.Errorf("stats: get person titles: %w", err)
+	}
+	if mediaType != "all" {
+		filtered := titles[:0]
+		for _, title := range titles {
+			if title.MediaType == mediaType {
+				filtered = append(filtered, title)
+			}
+		}
+		titles = filtered
+	}
+	sort.Slice(titles, func(i, j int) bool { return titles[i].WatchedAt.After(titles[j].WatchedAt) })
+	if len(titles) > 30 {
+		titles = titles[:30]
+	}
+	movieIDs := make([]int64, 0, len(titles))
+	tvIDs := make([]int64, 0, len(titles))
+	for _, title := range titles {
+		if title.MediaType == "tv" {
+			tvIDs = append(tvIDs, title.ID)
+		} else {
+			movieIDs = append(movieIDs, title.ID)
+		}
+	}
+
+	result := PersonTitles{Movies: []movie.MovieResponse{}, TV: []tv.TVResponse{}}
+	var movieErr, tvErr error
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		result.Movies, movieErr = s.movies.GetByIDs(ctx, movieIDs)
+	}()
+	go func() {
+		defer wg.Done()
+		result.TV, tvErr = s.tv.GetByIDs(ctx, tvIDs)
+	}()
+	wg.Wait()
+	if movieErr != nil {
+		return PersonTitles{}, fmt.Errorf("stats: enrich person movies: %w", movieErr)
+	}
+	if tvErr != nil {
+		return PersonTitles{}, fmt.Errorf("stats: enrich person tv: %w", tvErr)
+	}
+	return result, nil
+}
+
+func (s *Service) enrichPersonNames(ctx context.Context, entries []IDCount) {
+	if s.tmdb == nil || len(entries) == 0 {
+		return
+	}
+
+	var wg sync.WaitGroup
+	for i := range entries {
+		wg.Add(1)
+		go func(entry *IDCount) {
+			defer wg.Done()
+			var person struct {
+				Name string `json:"name"`
+			}
+			if err := s.tmdb.GetPersonDetail(ctx, entry.ID, &person); err == nil {
+				entry.Name = person.Name
+			}
+		}(&entries[i])
+	}
+	wg.Wait()
 }
 
 func addCounts(counts map[int64]int, ids []int64) {

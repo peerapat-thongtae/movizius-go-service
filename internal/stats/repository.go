@@ -18,6 +18,52 @@ type Repository interface {
 	// watched in [from, to), with EpisodesInPeriod counting only episodes in
 	// that range. Both bounds nil means unbounded.
 	FindWatchedTV(ctx context.Context, userID string, from, to *time.Time) ([]tvWatchRecord, error)
+	FindWatchedTitlesByPerson(ctx context.Context, userID string, personID int64, role string) ([]PersonTitle, error)
+}
+
+func (r *mongoRepository) FindWatchedTitlesByPerson(ctx context.Context, userID string, personID int64, role string) ([]PersonTitle, error) {
+	movieMatch := bson.M{"movie.cast_ids": personID}
+	tvMatch := bson.M{"tv.cast_ids": personID}
+	if role == "director" {
+		movieMatch = bson.M{"movie.director_id": personID}
+		tvMatch = bson.M{"tv.creator_ids": personID}
+	}
+
+	moviePipeline := bson.A{
+		bson.M{"$match": bson.M{"user_id": userID, "watched_at": bson.M{"$exists": true, "$ne": nil}}},
+		bson.M{"$lookup": bson.M{"from": "movie", "localField": "id", "foreignField": "id", "as": "movie"}},
+		bson.M{"$unwind": "$movie"},
+		bson.M{"$match": movieMatch},
+		bson.M{"$project": bson.M{"id": "$movie.id", "media_type": bson.M{"$literal": "movie"}, "title": "$movie.title", "poster_path": "$movie.poster_path", "release_date": "$movie.release_date", "watched_at": "$watched_at"}},
+	}
+	tvPipeline := bson.A{
+		bson.M{"$match": bson.M{"user_id": userID}},
+		bson.M{"$unwind": "$episode_watched"},
+		bson.M{"$group": bson.M{"_id": "$id", "watched_at": bson.M{"$max": "$episode_watched.watched_at"}}},
+		bson.M{"$lookup": bson.M{"from": "tv", "localField": "_id", "foreignField": "id", "as": "tv"}},
+		bson.M{"$unwind": "$tv"},
+		bson.M{"$match": tvMatch},
+		bson.M{"$project": bson.M{"id": "$tv.id", "media_type": bson.M{"$literal": "tv"}, "title": "$tv.name", "poster_path": "$tv.poster_path", "first_air_date": "$tv.first_air_date", "watched_at": 1}},
+	}
+
+	results := make([]PersonTitle, 0)
+	for _, query := range []struct {
+		collection string
+		pipeline   bson.A
+	}{{"movie_user", moviePipeline}, {"tv_user", tvPipeline}} {
+		cursor, err := r.db.Collection(query.collection).Aggregate(ctx, query.pipeline)
+		if err != nil {
+			return nil, fmt.Errorf("stats: aggregate person titles: %w", err)
+		}
+		var titles []PersonTitle
+		if err := cursor.All(ctx, &titles); err != nil {
+			cursor.Close(ctx)
+			return nil, fmt.Errorf("stats: decode person titles: %w", err)
+		}
+		cursor.Close(ctx)
+		results = append(results, titles...)
+	}
+	return results, nil
 }
 
 type mongoRepository struct {

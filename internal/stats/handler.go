@@ -3,6 +3,7 @@ package stats
 import (
 	"log/slog"
 	"net/http"
+	"strconv"
 
 	"github.com/peera/movizius-go-service/internal/shared/middleware"
 	"github.com/peera/movizius-go-service/internal/shared/response"
@@ -23,6 +24,40 @@ func NewHandler(service *Service, log *slog.Logger) *Handler {
 // auth is applied to every protected route in this feature.
 func (h *Handler) RegisterRoutes(mux *http.ServeMux, auth func(http.Handler) http.Handler) {
 	mux.Handle("GET /stats/summary", auth(http.HandlerFunc(h.GetSummary)))
+	mux.Handle("GET /stats/person/{id}", auth(http.HandlerFunc(h.GetPersonTitles)))
+}
+
+func (h *Handler) GetPersonTitles(w http.ResponseWriter, r *http.Request) {
+	userID, ok := middleware.UserIDFromContext(r.Context())
+	if !ok {
+		response.Error(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+	personID, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil || personID < 1 {
+		response.Error(w, http.StatusBadRequest, "invalid person id")
+		return
+	}
+	role := r.URL.Query().Get("role")
+	if role != "actor" && role != "director" {
+		response.Error(w, http.StatusBadRequest, "role must be actor or director")
+		return
+	}
+	mediaType := r.URL.Query().Get("media_type")
+	if mediaType == "" {
+		mediaType = "all"
+	}
+	if mediaType != "all" && mediaType != "movie" && mediaType != "tv" {
+		response.Error(w, http.StatusBadRequest, "media_type must be all, movie, or tv")
+		return
+	}
+	titles, err := h.service.GetWatchedTitlesByPerson(r.Context(), userID, personID, role, mediaType)
+	if err != nil {
+		h.log.Error("failed to get person watch history", "error", err, "user", userID, "person", personID)
+		response.Error(w, http.StatusInternalServerError, "failed to get person watch history")
+		return
+	}
+	response.Success(w, http.StatusOK, titles)
 }
 
 // GetSummary returns the authenticated user's watch-history summary.

@@ -92,11 +92,25 @@ func (s *TVService) Discover(ctx context.Context, userID string, q DiscoverQuery
 		return []TVResponse{}, total, nil
 	}
 
+	results, err := s.GetByIDs(ctx, ids)
+	if err != nil {
+		return nil, 0, err
+	}
+	return results, total, nil
+}
+
+// GetByIDs returns the same enriched response shape as Discover for a known
+// set of TV IDs.
+func (s *TVService) GetByIDs(ctx context.Context, ids []int64) ([]TVResponse, error) {
+	if len(ids) == 0 {
+		return []TVResponse{}, nil
+	}
+
 	// Load cached DB records so they can override TMDB detail (DB is the source of
 	// truth for the fields it stores). Read-only during the fan-out below.
 	cached, err := s.repo.FindByTMDBIDs(ctx, ids)
 	if err != nil {
-		return nil, 0, fmt.Errorf("tv service: fetch cached tv: %w", err)
+		return nil, fmt.Errorf("tv service: fetch cached tv: %w", err)
 	}
 
 	results := make([]TVResponse, len(ids))
@@ -126,7 +140,7 @@ func (s *TVService) Discover(ctx context.Context, userID string, q DiscoverQuery
 
 	for _, err := range errs {
 		if err != nil {
-			return nil, 0, fmt.Errorf("tv service: enrich from tmdb: %w", err)
+			return nil, fmt.Errorf("tv service: enrich from tmdb: %w", err)
 		}
 	}
 
@@ -134,7 +148,7 @@ func (s *TVService) Discover(ctx context.Context, userID string, q DiscoverQuery
 	// correct timezone (set by TVMaze sync), unlike TMDB which returns date-only.
 	airDates, err := s.repo.GetNextEpisodeAirDatesByIDs(ctx, ids)
 	if err != nil {
-		return nil, 0, fmt.Errorf("tv service: get air dates from db: %w", err)
+		return nil, fmt.Errorf("tv service: get air dates from db: %w", err)
 	}
 	for i := range results {
 		if airDate, ok := airDates[results[i].ID]; ok && results[i].NextEpisodeToAir != nil {
@@ -142,7 +156,7 @@ func (s *TVService) Discover(ctx context.Context, userID string, q DiscoverQuery
 		}
 	}
 
-	return results, total, nil
+	return results, nil
 }
 
 // Random returns up to total TV series the user hasn't tracked yet (per withoutStatus),

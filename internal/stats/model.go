@@ -2,6 +2,13 @@
 // director/language breakdowns) for a user, optionally scoped to a month or year.
 package stats
 
+import (
+	"time"
+
+	"github.com/peera/movizius-go-service/internal/movie"
+	"github.com/peera/movizius-go-service/internal/tv"
+)
+
 // Period describes the date range and media-type scope a Summary was computed over.
 type Period struct {
 	Type      string `json:"type"` // "month", "year", or "all"
@@ -26,11 +33,12 @@ type Ratings struct {
 }
 
 // IDCount pairs a TMDB entity id (genre, person) with how many watched titles
-// referenced it. Names are resolved client-side from the id, matching the
-// convention already used by internal/recommendation.Profile.
+// referenced it. Person entries also include their display name so the client
+// does not need to fan out into one request per person.
 type IDCount struct {
-	ID    int64 `json:"id"`
-	Count int   `json:"count"`
+	ID    int64  `json:"id"`
+	Name  string `json:"name,omitempty"`
+	Count int    `json:"count"`
 }
 
 // LanguageCount pairs an ISO-639-1 original_language code with how many
@@ -49,6 +57,24 @@ type Summary struct {
 	TopActors    []IDCount       `json:"top_actors"`
 	TopDirectors []IDCount       `json:"top_directors"` // movie directors + tv creators, merged by TMDB person id
 	Languages    []LanguageCount `json:"languages"`
+}
+
+// PersonTitle is a watched title connected to a top actor or director.
+type PersonTitle struct {
+	ID           int64     `bson:"id" json:"id"`
+	MediaType    string    `bson:"media_type" json:"media_type"`
+	Title        string    `bson:"title" json:"title"`
+	PosterPath   string    `bson:"poster_path" json:"poster_path"`
+	ReleaseDate  string    `bson:"release_date" json:"release_date,omitempty"`
+	FirstAirDate string    `bson:"first_air_date" json:"first_air_date,omitempty"`
+	WatchedAt    time.Time `bson:"watched_at" json:"-"`
+}
+
+// PersonTitles is composed of the same full response types used by the normal
+// movie and TV list endpoints, including poster and rating data.
+type PersonTitles struct {
+	Movies []movie.MovieResponse `json:"movies"`
+	TV     []tv.TVResponse       `json:"tv"`
 }
 
 // movieWatchRecord is one watched movie joined with its cached TMDB metadata.
