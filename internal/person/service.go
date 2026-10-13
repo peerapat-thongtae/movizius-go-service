@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/peera/movizius-go-service/internal/movie"
+	"github.com/peera/movizius-go-service/internal/shared/response"
 	"github.com/peera/movizius-go-service/internal/tv"
 	"github.com/peera/movizius-go-service/pkg/tmdb"
 )
@@ -19,6 +20,22 @@ type Service struct {
 // NewService constructs a person service.
 func NewService(movies movie.MovieRepository, tvRepo tv.TVRepository, tmdbClient *tmdb.Client) *Service {
 	return &Service{movies: movies, tv: tvRepo, tmdb: tmdbClient}
+}
+
+// Search returns matching people from TMDB without requiring them to exist in
+// the local movie or TV catalog.
+func (s *Service) Search(ctx context.Context, query string, page int) (*response.Page[SearchResult], error) {
+	var result tmdb.SearchPage[SearchResult]
+	if err := s.tmdb.SearchPerson(ctx, query, page, &result); err != nil {
+		return nil, fmt.Errorf("person service: search tmdb: %w", err)
+	}
+
+	return &response.Page[SearchResult]{
+		Page:         result.Page,
+		TotalPages:   result.TotalPages,
+		TotalResults: result.TotalResults,
+		Results:      result.Results,
+	}, nil
 }
 
 // GetByID fetches the TMDB person and only returns filmography credits which

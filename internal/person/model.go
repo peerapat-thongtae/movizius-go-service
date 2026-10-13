@@ -41,3 +41,12 @@ type Response struct {
 	Person  Detail  `json:"person"`
 	Credits Credits `json:"credits"`
 }
+
+// SearchResult is the subset of a TMDB person search result needed by the web client.
+type SearchResult struct {
+	ID                 int64   `json:"id"`
+	Name               string  `json:"name"`
+	ProfilePath        *string `json:"profile_path"`
+	KnownForDepartment string  `json:"known_for_department"`
+	Popularity         float64 `json:"popularity"`
+}
