@@ -287,6 +287,20 @@ func (s *Service) GetMovieAffinity(ctx context.Context, userID string) (movie.Mo
 	}, nil
 }
 
+// GetTVAffinity exposes the TV-specific affinity buckets without coupling the
+// TV package to this package's persisted profile representation.
+func (s *Service) GetTVAffinity(ctx context.Context, userID string) (tv.TVAffinity, error) {
+	profile, err := s.repo.GetProfile(ctx, userID)
+	if err != nil {
+		return tv.TVAffinity{}, err
+	}
+	return tv.TVAffinity{
+		Genres: bucketScores(profile.TV.Genres), Keywords: bucketScores(profile.TV.Keywords),
+		Actors: bucketScores(profile.TV.Actors), Creators: bucketScores(profile.TV.Creators),
+		ProductionCompanies: bucketScores(profile.TV.ProductionCompanies), WatchedIDs: profile.TV.WatchedIDs,
+	}, nil
+}
+
 // bucketScores converts a Bucket (string-keyed, for Mongo storage) into an
 // int64-keyed score map (for cheap lookup against TMDB entity ids).
 func bucketScores(b Bucket) map[int64]int {

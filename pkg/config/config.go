@@ -20,6 +20,8 @@ type Config struct {
 	Port                         string
 	FirebaseServiceAccountBase64 string
 	TMDBAccessToken              string
+	XAIAPIKey                    string
+	XAIModel                     string
 	NodeEnv                      string
 
 	// Recommendation profile scoring tunables — all optional, defaulted below.
@@ -54,6 +56,8 @@ func Load() (*Config, error) {
 		Port:                         os.Getenv("PORT"),
 		FirebaseServiceAccountBase64: os.Getenv("FIREBASE_SERVICE_ACCOUNT_BASE64"),
 		TMDBAccessToken:              os.Getenv("TMDB_API_READ_ACCESS_TOKEN"),
+		XAIAPIKey:                    os.Getenv("XAI_API_KEY"),
+		XAIModel:                     os.Getenv("XAI_MODEL"),
 		NodeEnv:                      os.Getenv("NODE_ENV"),
 	}
 

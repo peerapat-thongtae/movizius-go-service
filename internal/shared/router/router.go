@@ -41,6 +41,8 @@ type Deps struct {
 	TVMaze               *tvmaze.Client
 	Logger               *slog.Logger
 	Development          bool
+	XAIAPIKey            string
+	XAIModel             string
 	RecommendationConfig recommendation.Config
 }
 
@@ -88,7 +90,7 @@ func New(deps Deps) http.Handler {
 	movie.NewHandler(movieService, deps.Logger).RegisterRoutes(mux, authSynced)
 	tv.NewHandler(tvService, deps.Logger).RegisterRoutes(mux, authSynced)
 	person.NewHandler(person.NewService(movieRepo, tvRepo, deps.TMDB), deps.Logger).RegisterRoutes(mux, authSynced)
-	recommendation.NewHandler(recService, deps.Logger).RegisterRoutes(mux, authSynced)
+	recommendation.NewHandler(recService, movieService, tvService, deps.XAIAPIKey, deps.XAIModel, deps.Logger).RegisterRoutes(mux, authSynced)
 	notification.NewHandler(notification.NewService(notification.NewRepository(deps.DB), deps.Firebase), deps.Logger).RegisterRoutes(mux, authSynced)
 	stats.NewHandler(stats.NewService(stats.NewRepository(deps.DB), deps.TMDB, movieService, tvService), deps.Logger).RegisterRoutes(mux, authSynced)
 

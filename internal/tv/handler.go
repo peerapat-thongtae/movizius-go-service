@@ -31,11 +31,34 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux, auth func(http.Handler) htt
 	mux.Handle("POST /tv/episodes", auth(http.HandlerFunc(h.UpsertEpisodes)))
 	mux.Handle("GET /tv/states", auth(http.HandlerFunc(h.GetStates)))
 	mux.Handle("GET /tv/discover", auth(http.HandlerFunc(h.Discover)))
+	mux.Handle("GET /tv/recommendations", auth(http.HandlerFunc(h.Recommendations)))
 	mux.Handle("GET /tv/search", auth(http.HandlerFunc(h.Search)))
 	mux.Handle("GET /tv/random", auth(http.HandlerFunc(h.Random)))
 	mux.Handle("GET /tv/trending", auth(http.HandlerFunc(h.Trending)))
 	mux.Handle("GET /tv/{id}", auth(http.HandlerFunc(h.GetByID)))
 	mux.Handle("GET /tv/{id}/season/{season_number}", auth(http.HandlerFunc(h.GetSeason)))
+}
+
+func (h *Handler) Recommendations(w http.ResponseWriter, r *http.Request) {
+	userID, ok := middleware.UserIDFromContext(r.Context())
+	if !ok {
+		response.Error(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+	page := intParam(r.URL.Query().Get("page"), 1)
+	if page < 1 {
+		page = 1
+	}
+	results, total, err := h.service.Recommendations(r.Context(), userID, page)
+	if err != nil {
+		h.log.Error("failed to get tv recommendations", "error", err, "user", userID, "path", r.URL.Path)
+		response.Error(w, http.StatusInternalServerError, "failed to get tv recommendations")
+		return
+	}
+	const pageSize = 20
+	response.Success(w, http.StatusOK, response.Page[TVResponse]{
+		Page: page, TotalResults: total, TotalPages: max(1, (total+pageSize-1)/pageSize), Results: results,
+	})
 }
 
 // Search searches TMDB for TV series matching a query and enriches results with cached DB data.

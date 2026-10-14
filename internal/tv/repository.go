@@ -35,6 +35,20 @@ type TVRepository interface {
 	UpdateProfileContribution(ctx context.Context, userID string, tvID int64, c ProfileContribution) error
 	// FindAllTVUserDocs returns every tv_user doc (for recommendation profile full recompute).
 	FindAllTVUserDocs(ctx context.Context) ([]TVUser, error)
+	FindRecommendationCandidates(ctx context.Context, criteria RecommendationCriteria, excludeIDs []int64, limit int) ([]TV, error)
+}
+
+type RecommendationCriteria struct {
+	GenreIDs   []int64
+	KeywordIDs []int64
+	CastIDs    []int64
+	CreatorIDs []int64
+	CompanyIDs []int64
+}
+
+func (c RecommendationCriteria) empty() bool {
+	return len(c.GenreIDs) == 0 && len(c.KeywordIDs) == 0 && len(c.CastIDs) == 0 &&
+		len(c.CreatorIDs) == 0 && len(c.CompanyIDs) == 0
 }
 
 type mongoTVRepository struct {
@@ -62,6 +76,46 @@ func (r *mongoTVRepository) FindByTMDBIDs(ctx context.Context, ids []int64) (map
 		result[t.TVID] = t
 	}
 	return result, cursor.Err()
+}
+
+func (r *mongoTVRepository) FindRecommendationCandidates(ctx context.Context, criteria RecommendationCriteria, excludeIDs []int64, limit int) ([]TV, error) {
+	if criteria.empty() {
+		return nil, nil
+	}
+
+	var or bson.A
+	if len(criteria.GenreIDs) > 0 {
+		or = append(or, bson.M{"genres": bson.M{"$in": criteria.GenreIDs}})
+	}
+	if len(criteria.KeywordIDs) > 0 {
+		or = append(or, bson.M{"keywords": bson.M{"$in": criteria.KeywordIDs}})
+	}
+	if len(criteria.CastIDs) > 0 {
+		or = append(or, bson.M{"cast_ids": bson.M{"$in": criteria.CastIDs}})
+	}
+	if len(criteria.CreatorIDs) > 0 {
+		or = append(or, bson.M{"creator_ids": bson.M{"$in": criteria.CreatorIDs}})
+	}
+	if len(criteria.CompanyIDs) > 0 {
+		or = append(or, bson.M{"production_companies": bson.M{"$in": criteria.CompanyIDs}})
+	}
+
+	filter := bson.M{"$or": or}
+	if len(excludeIDs) > 0 {
+		filter["id"] = bson.M{"$nin": excludeIDs}
+	}
+
+	cursor, err := r.db.Collection("tv").Find(ctx, filter, options.Find().SetLimit(int64(limit)))
+	if err != nil {
+		return nil, fmt.Errorf("tv: find recommendation candidates: %w", err)
+	}
+	defer cursor.Close(ctx)
+
+	results := []TV{}
+	if err := cursor.All(ctx, &results); err != nil {
+		return nil, fmt.Errorf("tv: decode recommendation candidates: %w", err)
+	}
+	return results, nil
 }
 
 func (r *mongoTVRepository) UpsertTVState(ctx context.Context, userID string, tvID int64, episodes []EpisodeWatched, rating *float64) error {

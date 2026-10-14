@@ -30,12 +30,25 @@ const randomMaxPages = 5
 // randomTimeWindow is the trending time window Random samples from.
 const randomTimeWindow = "day"
 
+const recommendationsPageSize = 20
+const recommendationCandidateLimit = 300
+
+type TVAffinity struct {
+	Genres              map[int64]int
+	Keywords            map[int64]int
+	Actors              map[int64]int
+	Creators            map[int64]int
+	ProductionCompanies map[int64]int
+	WatchedIDs          []int64
+}
+
 // RecommendationUpdater is the narrow interface TVService uses to trigger a
 // recommendation-profile update after a state change, without importing the
 // recommendation package's concrete type. Errors are handled internally by
 // the implementation — this never fails the caller's request.
 type RecommendationUpdater interface {
 	ApplyTVStateChange(ctx context.Context, userID string, tvID int64)
+	GetTVAffinity(ctx context.Context, userID string) (TVAffinity, error)
 }
 
 // TVService holds the business logic for the TV feature.
@@ -97,6 +110,57 @@ func (s *TVService) Discover(ctx context.Context, userID string, q DiscoverQuery
 		return nil, 0, err
 	}
 	return results, total, nil
+}
+
+// Recommendations returns unwatched TV series ranked from the user's rated
+// watch history. Repeated calls advance through unseen candidates.
+func (s *TVService) Recommendations(ctx context.Context, userID string, page int) ([]TVResponse, int, error) {
+	if s.recommendation == nil {
+		return []TVResponse{}, 0, nil
+	}
+
+	aff, err := s.recommendation.GetTVAffinity(ctx, userID)
+	if err != nil {
+		return nil, 0, fmt.Errorf("tv service: get tv affinity: %w", err)
+	}
+	criteria := RecommendationCriteria{
+		GenreIDs: positiveScoreIDs(aff.Genres), KeywordIDs: positiveScoreIDs(aff.Keywords),
+		CastIDs: positiveScoreIDs(aff.Actors), CreatorIDs: positiveScoreIDs(aff.Creators),
+		CompanyIDs: positiveScoreIDs(aff.ProductionCompanies),
+	}
+	if criteria.empty() {
+		return []TVResponse{}, 0, nil
+	}
+	candidates, err := s.repo.FindRecommendationCandidates(ctx, criteria, aff.WatchedIDs, recommendationCandidateLimit)
+	if err != nil {
+		return nil, 0, fmt.Errorf("tv service: find recommendation candidates: %w", err)
+	}
+	scored := rankByAffinity(candidates, aff)
+	total := len(scored)
+	start := (page - 1) * recommendationsPageSize
+	if start >= total {
+		return []TVResponse{}, total, nil
+	}
+	end := min(start+recommendationsPageSize, total)
+	ids := make([]int64, end-start)
+	for i, t := range scored[start:end] {
+		ids[i] = t.TVID
+	}
+	results, err := s.GetByIDs(ctx, ids)
+	if err != nil {
+		return nil, 0, err
+	}
+	return results, total, nil
+}
+
+func positiveScoreIDs(scores map[int64]int) []int64 {
+	ids := make([]int64, 0, len(scores))
+	for id, score := range scores {
+		if score > 0 {
+			ids = append(ids, id)
+		}
+	}
+	return ids
 }
 
 // GetByIDs returns the same enriched response shape as Discover for a known

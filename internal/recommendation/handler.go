@@ -4,25 +4,32 @@ import (
 	"log/slog"
 	"net/http"
 
+	"github.com/peera/movizius-go-service/internal/movie"
 	"github.com/peera/movizius-go-service/internal/shared/middleware"
 	"github.com/peera/movizius-go-service/internal/shared/response"
+	"github.com/peera/movizius-go-service/internal/tv"
 )
 
 // Handler exposes recommendation profile endpoints over HTTP.
 type Handler struct {
-	service *Service
-	log     *slog.Logger
+	service  *Service
+	movies   *movie.MovieService
+	tv       *tv.TVService
+	xaiKey   string
+	xaiModel string
+	log      *slog.Logger
 }
 
 // NewHandler constructs a recommendation Handler.
-func NewHandler(service *Service, log *slog.Logger) *Handler {
-	return &Handler{service: service, log: log}
+func NewHandler(service *Service, movies *movie.MovieService, tvService *tv.TVService, xaiKey, xaiModel string, log *slog.Logger) *Handler {
+	return &Handler{service: service, movies: movies, tv: tvService, xaiKey: xaiKey, xaiModel: xaiModel, log: log}
 }
 
 // RegisterRoutes binds recommendation routes onto the given mux.
 // auth is applied to every protected route in this feature.
 func (h *Handler) RegisterRoutes(mux *http.ServeMux, auth func(http.Handler) http.Handler) {
 	mux.Handle("GET /recommendation/profile", auth(http.HandlerFunc(h.GetProfile)))
+	mux.Handle("POST /recommendation/ask", auth(http.HandlerFunc(h.Ask)))
 	mux.Handle("POST /recommendation/admin/recompute", auth(http.HandlerFunc(h.RecomputeAll)))
 }
 

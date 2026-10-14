@@ -91,6 +91,8 @@ func main() {
 		Firebase:       firebaseApp,
 		TMDB:           tmdb.New(cfg.TMDBAccessToken),
 		TVMaze:         tvmaze.New(""),
+		XAIAPIKey:      cfg.XAIAPIKey,
+		XAIModel:       cfg.XAIModel,
 		Logger:         log,
 		Development:    cfg.IsDevelopment(),
 		RecommendationConfig: recommendation.Config{
