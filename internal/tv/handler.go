@@ -31,12 +31,52 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux, auth func(http.Handler) htt
 	mux.Handle("POST /tv/episodes", auth(http.HandlerFunc(h.UpsertEpisodes)))
 	mux.Handle("GET /tv/states", auth(http.HandlerFunc(h.GetStates)))
 	mux.Handle("GET /tv/discover", auth(http.HandlerFunc(h.Discover)))
+	mux.Handle("GET /tv/recommendations/random", auth(http.HandlerFunc(h.RandomRecommendations)))
 	mux.Handle("GET /tv/recommendations", auth(http.HandlerFunc(h.Recommendations)))
 	mux.Handle("GET /tv/search", auth(http.HandlerFunc(h.Search)))
 	mux.Handle("GET /tv/random", auth(http.HandlerFunc(h.Random)))
 	mux.Handle("GET /tv/trending", auth(http.HandlerFunc(h.Trending)))
 	mux.Handle("GET /tv/{id}", auth(http.HandlerFunc(h.GetByID)))
 	mux.Handle("GET /tv/{id}/season/{season_number}", auth(http.HandlerFunc(h.GetSeason)))
+}
+
+// RandomRecommendations returns a random selection personalized to the user's
+// rated watch history, excluding recently served titles.
+//
+//	@Summary		Random personalized TV suggestions
+//	@Description	Returns a random selection of unwatched TV series matching the user's recommendation profile. Recently served titles are excluded so each request surfaces new picks.
+//	@Tags			TV
+//	@Produce		json
+//	@Security		BearerAuth
+//	@Param			total	query	int	false	"Number of results (default 10)"
+//	@Success		200	{object}	response.Page[TVResponse]
+//	@Failure		401	{object}	map[string]string
+//	@Failure		500	{object}	map[string]string
+//	@Router			/tv/recommendations/random [get]
+func (h *Handler) RandomRecommendations(w http.ResponseWriter, r *http.Request) {
+	userID, ok := middleware.UserIDFromContext(r.Context())
+	if !ok {
+		response.Error(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
+	total := intParam(r.URL.Query().Get("total"), 10)
+	if total < 1 {
+		total = 10
+	}
+	results, err := h.service.RandomRecommendations(r.Context(), userID, total)
+	if err != nil {
+		h.log.Error("failed to get random tv recommendations", "error", err, "user", userID, "path", r.URL.Path)
+		response.Error(w, http.StatusInternalServerError, "failed to get random tv recommendations")
+		return
+	}
+
+	response.Success(w, http.StatusOK, response.Page[TVResponse]{
+		Page:         1,
+		TotalResults: len(results),
+		TotalPages:   1,
+		Results:      results,
+	})
 }
 
 func (h *Handler) Recommendations(w http.ResponseWriter, r *http.Request) {

@@ -90,6 +90,10 @@ func recommendationSeenKey(userID string) string {
 	return "movie:recommendations:seen:" + userID
 }
 
+func randomRecommendationSeenKey(userID string) string {
+	return "movie:recommendations:random:seen:" + userID
+}
+
 // loadSeenIDs returns the ids previously served to this user under the given
 // cache key. Cache errors are swallowed — caching is best-effort and must
 // never fail the request.
@@ -278,6 +282,161 @@ func (s *MovieService) Recommendations(ctx context.Context, userID string, page 
 	}
 	s.saveSeenIDs(ctx, recommendationSeenKey(userID), seenIDs, pageIDs)
 	return results, total, nil
+}
+
+// RandomRecommendations returns a random personalized selection. It uses the
+// same affinity criteria as Recommendations, but samples from eligible titles
+// and remembers served ids so consecutive calls do not repeat picks.
+func (s *MovieService) RandomRecommendations(ctx context.Context, userID string, total int) ([]MovieResponse, error) {
+	return s.randomRecommendations(ctx, userID, total, true)
+}
+
+func (s *MovieService) randomRecommendations(ctx context.Context, userID string, total int, resetSeenWhenExhausted bool) ([]MovieResponse, error) {
+	if s.recommendation == nil {
+		return []MovieResponse{}, nil
+	}
+
+	aff, err := s.recommendation.GetMovieAffinity(ctx, userID)
+	if err != nil {
+		return nil, fmt.Errorf("movie service: get movie affinity: %w", err)
+	}
+	criteria := RecommendationCriteria{
+		GenreIDs:      positiveScoreIDs(aff.Genres),
+		KeywordIDs:    positiveScoreIDs(aff.Keywords),
+		CastIDs:       positiveScoreIDs(aff.Actors),
+		DirectorIDs:   positiveScoreIDs(aff.Directors),
+		CollectionIDs: positiveScoreIDs(aff.Collections),
+		CompanyIDs:    positiveScoreIDs(aff.ProductionCompanies),
+	}
+	if criteria.empty() {
+		return []MovieResponse{}, nil
+	}
+
+	candidates, err := s.repo.FindRecommendationCandidates(ctx, criteria, aff.WatchedIDs, recommendationCandidateLimit)
+	if err != nil {
+		return nil, fmt.Errorf("movie service: find random recommendation candidates: %w", err)
+	}
+	seenIDs := s.loadSeenIDs(ctx, randomRecommendationSeenKey(userID))
+	seenSet := make(map[int64]struct{}, len(seenIDs))
+	for _, id := range seenIDs {
+		seenSet[id] = struct{}{}
+	}
+
+	eligible := make([]Movie, 0, len(candidates))
+	for _, candidate := range candidates {
+		if _, seen := seenSet[candidate.MovieID]; seen || !isAcceptableMovieDoc(candidate) {
+			continue
+		}
+		eligible = append(eligible, candidate)
+	}
+	rand.Shuffle(len(eligible), func(i, j int) { eligible[i], eligible[j] = eligible[j], eligible[i] })
+
+	personalizedTotal := min(len(eligible), (total*7+9)/10)
+	selectedIDs := make(map[int64]struct{}, total)
+	ids := make([]int64, 0, total)
+	for _, candidate := range eligible[:personalizedTotal] {
+		selectedIDs[candidate.MovieID] = struct{}{}
+		ids = append(ids, candidate.MovieID)
+	}
+
+	watchedSet := make(map[int64]struct{}, len(aff.WatchedIDs))
+	for _, id := range aff.WatchedIDs {
+		watchedSet[id] = struct{}{}
+	}
+	trendingIDs := make([]int64, 0, total-personalizedTotal)
+	for page := 1; page <= randomMaxPages && len(ids)+len(trendingIDs) < total; page++ {
+		trendingPage, err := s.Trending(ctx, randomTimeWindow, page)
+		if err != nil {
+			return nil, fmt.Errorf("movie service: random recommendation trending page %d: %w", page, err)
+		}
+		for _, movie := range trendingPage.Results {
+			if _, watched := watchedSet[movie.ID]; watched {
+				continue
+			}
+			if _, seen := seenSet[movie.ID]; seen {
+				continue
+			}
+			if _, selected := selectedIDs[movie.ID]; selected {
+				continue
+			}
+			selectedIDs[movie.ID] = struct{}{}
+			trendingIDs = append(trendingIDs, movie.ID)
+			if len(ids)+len(trendingIDs) == total {
+				break
+			}
+		}
+	}
+	rand.Shuffle(len(trendingIDs), func(i, j int) { trendingIDs[i], trendingIDs[j] = trendingIDs[j], trendingIDs[i] })
+	ids = append(ids, trendingIDs...)
+
+	if len(ids) < total {
+		discoverIDs, err := s.discoverRecommendationIDs(ctx, positiveScoreIDs(aff.Genres), watchedSet, seenSet, selectedIDs, total-len(ids))
+		if err != nil {
+			return nil, err
+		}
+		ids = append(ids, discoverIDs...)
+	}
+
+	for _, candidate := range eligible[personalizedTotal:] {
+		if len(ids) == total {
+			break
+		}
+		if _, selected := selectedIDs[candidate.MovieID]; selected {
+			continue
+		}
+		selectedIDs[candidate.MovieID] = struct{}{}
+		ids = append(ids, candidate.MovieID)
+	}
+	rand.Shuffle(len(ids), func(i, j int) { ids[i], ids[j] = ids[j], ids[i] })
+	if len(ids) == 0 && resetSeenWhenExhausted && len(seenIDs) > 0 {
+		_ = s.cache.Delete(ctx, randomRecommendationSeenKey(userID))
+		return s.randomRecommendations(ctx, userID, total, false)
+	}
+	results, err := s.enrichMovieIDs(ctx, ids)
+	if err != nil {
+		return nil, err
+	}
+	s.saveSeenIDs(ctx, randomRecommendationSeenKey(userID), seenIDs, ids)
+	return results, nil
+}
+
+// discoverRecommendationIDs broadens a depleted personalized pool with
+// unwatched, unseen titles from TMDB Discover, using one of the user's liked
+// genres to retain relevance.
+func (s *MovieService) discoverRecommendationIDs(ctx context.Context, genreIDs []int64, watchedSet, seenSet, selectedIDs map[int64]struct{}, total int) ([]int64, error) {
+	if total == 0 {
+		return nil, nil
+	}
+
+	var genreID int64
+	if len(genreIDs) > 0 {
+		genreID = genreIDs[rand.Intn(len(genreIDs))]
+	}
+	ids := make([]int64, 0, total)
+	for page := 1; page <= randomMaxPages && len(ids) < total; page++ {
+		discoverPage, err := s.tmdb.Discover(ctx, "movie", genreID, page)
+		if err != nil {
+			return nil, fmt.Errorf("movie service: discover recommendation page %d: %w", page, err)
+		}
+		for _, movie := range discoverPage.Results {
+			if _, watched := watchedSet[movie.ID]; watched {
+				continue
+			}
+			if _, seen := seenSet[movie.ID]; seen {
+				continue
+			}
+			if _, selected := selectedIDs[movie.ID]; selected {
+				continue
+			}
+			selectedIDs[movie.ID] = struct{}{}
+			ids = append(ids, movie.ID)
+			if len(ids) == total {
+				break
+			}
+		}
+	}
+	rand.Shuffle(len(ids), func(i, j int) { ids[i], ids[j] = ids[j], ids[i] })
+	return ids, nil
 }
 
 // positiveScoreIDs returns the entity ids with a positive score — only

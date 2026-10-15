@@ -131,6 +131,56 @@ type TrendingPage struct {
 	} `json:"results"`
 }
 
+// DiscoverPage is the minimal paginated response used to collect IDs from
+// TMDB's discover endpoints.
+type DiscoverPage struct {
+	Page         int `json:"page"`
+	TotalPages   int `json:"total_pages"`
+	TotalResults int `json:"total_results"`
+	Results      []struct {
+		ID int64 `json:"id"`
+	} `json:"results"`
+}
+
+// Discover fetches /discover/movie or /discover/tv. A zero genreID returns a
+// broader popular catalog; otherwise the results are limited to that genre.
+func (c *Client) Discover(ctx context.Context, mediaType string, genreID int64, page int) (*DiscoverPage, error) {
+	params := url.Values{
+		"include_adult":  {"false"},
+		"language":       {"en-US"},
+		"page":           {fmt.Sprintf("%d", page)},
+		"sort_by":        {"popularity.desc"},
+		"vote_count.gte": {"50"},
+	}
+	if genreID > 0 {
+		params.Set("with_genres", fmt.Sprintf("%d", genreID))
+	}
+	endpoint := fmt.Sprintf("%s/discover/%s?%s", baseURL, mediaType, params.Encode())
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return nil, fmt.Errorf("tmdb: build request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+c.accessToken)
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("tmdb: request /discover/%s: %w", mediaType, err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("tmdb: /discover/%s returned status %d", mediaType, resp.StatusCode)
+	}
+
+	var result DiscoverPage
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("tmdb: decode /discover/%s: %w", mediaType, err)
+	}
+	return &result, nil
+}
+
 // GetTrending fetches /trending/{mediaType}/{timeWindow} from TMDB.
 // mediaType is "movie" or "tv"; timeWindow is "day" or "week".
 func (c *Client) GetTrending(ctx context.Context, mediaType, timeWindow string, page int) (*TrendingPage, error) {

@@ -68,10 +68,14 @@ func randomSeenKey(userID string) string {
 	return "tv:random:seen:" + userID
 }
 
-// loadSeenIDs returns the ids previously served to this user via Random.
+func randomRecommendationSeenKey(userID string) string {
+	return "tv:recommendations:random:seen:" + userID
+}
+
+// loadSeenIDs returns the ids previously served under the given cache key.
 // Cache errors are swallowed — caching is best-effort and must never fail the request.
-func (s *TVService) loadSeenIDs(ctx context.Context, userID string) []int64 {
-	raw, ok, err := s.cache.Get(ctx, randomSeenKey(userID))
+func (s *TVService) loadSeenIDs(ctx context.Context, key string) []int64 {
+	raw, ok, err := s.cache.Get(ctx, key)
 	if err != nil || !ok {
 		return nil
 	}
@@ -82,8 +86,8 @@ func (s *TVService) loadSeenIDs(ctx context.Context, userID string) []int64 {
 	return ids
 }
 
-// saveSeenIDs merges newIDs into the user's seen-set, caps its size, and refreshes the TTL.
-func (s *TVService) saveSeenIDs(ctx context.Context, userID string, existing, newIDs []int64) {
+// saveSeenIDs merges newIDs into the seen-set, caps its size, and refreshes the TTL.
+func (s *TVService) saveSeenIDs(ctx context.Context, key string, existing, newIDs []int64) {
 	merged := append(existing, newIDs...)
 	if len(merged) > randomSeenCap {
 		merged = merged[len(merged)-randomSeenCap:]
@@ -92,7 +96,7 @@ func (s *TVService) saveSeenIDs(ctx context.Context, userID string, existing, ne
 	if err != nil {
 		return
 	}
-	_ = s.cache.Set(ctx, randomSeenKey(userID), string(raw), randomSeenTTL)
+	_ = s.cache.Set(ctx, key, string(raw), randomSeenTTL)
 }
 
 // Discover returns a page of TV series enriched with TMDB detail data.
@@ -151,6 +155,158 @@ func (s *TVService) Recommendations(ctx context.Context, userID string, page int
 		return nil, 0, err
 	}
 	return results, total, nil
+}
+
+// RandomRecommendations returns a random personalized selection. It uses the
+// same affinity criteria as Recommendations, but samples from eligible titles
+// and remembers served ids so consecutive calls do not repeat picks.
+func (s *TVService) RandomRecommendations(ctx context.Context, userID string, total int) ([]TVResponse, error) {
+	return s.randomRecommendations(ctx, userID, total, true)
+}
+
+func (s *TVService) randomRecommendations(ctx context.Context, userID string, total int, resetSeenWhenExhausted bool) ([]TVResponse, error) {
+	if s.recommendation == nil {
+		return []TVResponse{}, nil
+	}
+
+	aff, err := s.recommendation.GetTVAffinity(ctx, userID)
+	if err != nil {
+		return nil, fmt.Errorf("tv service: get tv affinity: %w", err)
+	}
+	criteria := RecommendationCriteria{
+		GenreIDs: positiveScoreIDs(aff.Genres), KeywordIDs: positiveScoreIDs(aff.Keywords),
+		CastIDs: positiveScoreIDs(aff.Actors), CreatorIDs: positiveScoreIDs(aff.Creators),
+		CompanyIDs: positiveScoreIDs(aff.ProductionCompanies),
+	}
+	if criteria.empty() {
+		return []TVResponse{}, nil
+	}
+
+	candidates, err := s.repo.FindRecommendationCandidates(ctx, criteria, aff.WatchedIDs, recommendationCandidateLimit)
+	if err != nil {
+		return nil, fmt.Errorf("tv service: find random recommendation candidates: %w", err)
+	}
+	seenIDs := s.loadSeenIDs(ctx, randomRecommendationSeenKey(userID))
+	seenSet := make(map[int64]struct{}, len(seenIDs))
+	for _, id := range seenIDs {
+		seenSet[id] = struct{}{}
+	}
+
+	eligible := make([]TV, 0, len(candidates))
+	for _, candidate := range candidates {
+		if _, seen := seenSet[candidate.TVID]; seen || !isAcceptableTVDoc(candidate) {
+			continue
+		}
+		eligible = append(eligible, candidate)
+	}
+	rand.Shuffle(len(eligible), func(i, j int) { eligible[i], eligible[j] = eligible[j], eligible[i] })
+
+	personalizedTotal := min(len(eligible), (total*7+9)/10)
+	selectedIDs := make(map[int64]struct{}, total)
+	ids := make([]int64, 0, total)
+	for _, candidate := range eligible[:personalizedTotal] {
+		selectedIDs[candidate.TVID] = struct{}{}
+		ids = append(ids, candidate.TVID)
+	}
+
+	watchedSet := make(map[int64]struct{}, len(aff.WatchedIDs))
+	for _, id := range aff.WatchedIDs {
+		watchedSet[id] = struct{}{}
+	}
+	trendingIDs := make([]int64, 0, total-personalizedTotal)
+	for page := 1; page <= randomMaxPages && len(ids)+len(trendingIDs) < total; page++ {
+		trendingPage, err := s.Trending(ctx, randomTimeWindow, page)
+		if err != nil {
+			return nil, fmt.Errorf("tv service: random recommendation trending page %d: %w", page, err)
+		}
+		for _, show := range trendingPage.Results {
+			if _, watched := watchedSet[show.ID]; watched {
+				continue
+			}
+			if _, seen := seenSet[show.ID]; seen {
+				continue
+			}
+			if _, selected := selectedIDs[show.ID]; selected {
+				continue
+			}
+			selectedIDs[show.ID] = struct{}{}
+			trendingIDs = append(trendingIDs, show.ID)
+			if len(ids)+len(trendingIDs) == total {
+				break
+			}
+		}
+	}
+	rand.Shuffle(len(trendingIDs), func(i, j int) { trendingIDs[i], trendingIDs[j] = trendingIDs[j], trendingIDs[i] })
+	ids = append(ids, trendingIDs...)
+
+	if len(ids) < total {
+		discoverIDs, err := s.discoverRecommendationIDs(ctx, positiveScoreIDs(aff.Genres), watchedSet, seenSet, selectedIDs, total-len(ids))
+		if err != nil {
+			return nil, err
+		}
+		ids = append(ids, discoverIDs...)
+	}
+
+	for _, candidate := range eligible[personalizedTotal:] {
+		if len(ids) == total {
+			break
+		}
+		if _, selected := selectedIDs[candidate.TVID]; selected {
+			continue
+		}
+		selectedIDs[candidate.TVID] = struct{}{}
+		ids = append(ids, candidate.TVID)
+	}
+	rand.Shuffle(len(ids), func(i, j int) { ids[i], ids[j] = ids[j], ids[i] })
+	if len(ids) == 0 && resetSeenWhenExhausted && len(seenIDs) > 0 {
+		_ = s.cache.Delete(ctx, randomRecommendationSeenKey(userID))
+		return s.randomRecommendations(ctx, userID, total, false)
+	}
+	results, err := s.GetByIDs(ctx, ids)
+	if err != nil {
+		return nil, err
+	}
+	s.saveSeenIDs(ctx, randomRecommendationSeenKey(userID), seenIDs, ids)
+	return results, nil
+}
+
+// discoverRecommendationIDs broadens a depleted personalized pool with
+// unwatched, unseen titles from TMDB Discover, using one of the user's liked
+// genres to retain relevance.
+func (s *TVService) discoverRecommendationIDs(ctx context.Context, genreIDs []int64, watchedSet, seenSet, selectedIDs map[int64]struct{}, total int) ([]int64, error) {
+	if total == 0 {
+		return nil, nil
+	}
+
+	var genreID int64
+	if len(genreIDs) > 0 {
+		genreID = genreIDs[rand.Intn(len(genreIDs))]
+	}
+	ids := make([]int64, 0, total)
+	for page := 1; page <= randomMaxPages && len(ids) < total; page++ {
+		discoverPage, err := s.tmdb.Discover(ctx, "tv", genreID, page)
+		if err != nil {
+			return nil, fmt.Errorf("tv service: discover recommendation page %d: %w", page, err)
+		}
+		for _, show := range discoverPage.Results {
+			if _, watched := watchedSet[show.ID]; watched {
+				continue
+			}
+			if _, seen := seenSet[show.ID]; seen {
+				continue
+			}
+			if _, selected := selectedIDs[show.ID]; selected {
+				continue
+			}
+			selectedIDs[show.ID] = struct{}{}
+			ids = append(ids, show.ID)
+			if len(ids) == total {
+				break
+			}
+		}
+	}
+	rand.Shuffle(len(ids), func(i, j int) { ids[i], ids[j] = ids[j], ids[i] })
+	return ids, nil
 }
 
 func positiveScoreIDs(scores map[int64]int) []int64 {
@@ -230,7 +386,7 @@ func (s *TVService) GetByIDs(ctx context.Context, ids []int64) ([]TVResponse, er
 // served recently (see the Redis "seen" cache) are excluded so consecutive calls
 // don't repeat the same titles.
 func (s *TVService) Random(ctx context.Context, userID string, total int, withoutStatus []string) ([]TVResponse, error) {
-	seenIDs := s.loadSeenIDs(ctx, userID)
+	seenIDs := s.loadSeenIDs(ctx, randomSeenKey(userID))
 	seenSet := make(map[int64]struct{}, len(seenIDs))
 	for _, id := range seenIDs {
 		seenSet[id] = struct{}{}
@@ -276,7 +432,7 @@ func (s *TVService) Random(ctx context.Context, userID string, total int, withou
 	for i, t := range pool {
 		ids[i] = t.ID
 	}
-	s.saveSeenIDs(ctx, userID, seenIDs, ids)
+	s.saveSeenIDs(ctx, randomSeenKey(userID), seenIDs, ids)
 
 	return pool, nil
 }
