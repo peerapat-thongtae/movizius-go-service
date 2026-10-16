@@ -28,6 +28,10 @@ const seenCap = 300
 // to fill total.
 const randomMaxPages = 5
 
+// reelsMaxPages widens the random source page range for the trailer feed so
+// its seen cache does not cycle through the same small popular pool quickly.
+const reelsMaxPages = 25
+
 // randomTimeWindow is the trending time window Random samples from.
 const randomTimeWindow = "day"
 
@@ -81,6 +85,10 @@ func NewService(repo MovieRepository, tmdb *tmdb.Client, c cache.Cache, rec Reco
 
 func randomSeenKey(userID string) string {
 	return "movie:random:seen:" + userID
+}
+
+func reelsSeenKey(userID string) string {
+	return "movie:reels:seen:" + userID
 }
 
 // recommendationSeenKey namespaces the seen-id cache for /movie/recommendations,
@@ -507,6 +515,119 @@ func (s *MovieService) Random(ctx context.Context, userID string, total int, wit
 	s.saveSeenIDs(ctx, randomSeenKey(userID), seenIDs, ids)
 
 	return pool, nil
+}
+
+// Reels creates a small, varied trailer feed without making the client stitch
+// together multiple sources. About half comes from the user's current
+// watchlist; the rest is split between random pages of TMDB trending and
+// popular. Watched and watchlisted titles are excluded from the external
+// sources, while a separate per-user seen cache prevents consecutive feeds
+// from repeating titles.
+func (s *MovieService) Reels(ctx context.Context, userID string, total int) ([]MovieResponse, error) {
+	return s.reels(ctx, userID, total, true)
+}
+
+func (s *MovieService) reels(ctx context.Context, userID string, total int, resetSeenWhenExhausted bool) ([]MovieResponse, error) {
+	seenIDs := s.loadSeenIDs(ctx, reelsSeenKey(userID))
+	seenSet := make(map[int64]struct{}, len(seenIDs))
+	for _, id := range seenIDs {
+		seenSet[id] = struct{}{}
+	}
+
+	states, err := s.repo.FindByUserID(ctx, userID)
+	if err != nil {
+		return nil, fmt.Errorf("movie service: reels states: %w", err)
+	}
+	trackedSet := make(map[int64]struct{}, len(states))
+	watchlistIDs := make([]int64, 0, len(states))
+	for _, state := range states {
+		trackedSet[state.MovieID] = struct{}{}
+		if state.WatchedAt == nil {
+			watchlistIDs = append(watchlistIDs, state.MovieID)
+		}
+	}
+	rand.Shuffle(len(watchlistIDs), func(i, j int) {
+		watchlistIDs[i], watchlistIDs[j] = watchlistIDs[j], watchlistIDs[i]
+	})
+
+	selectedSet := make(map[int64]struct{}, total)
+	ids := make([]int64, 0, total)
+	addIDs := func(candidates []int64, limit int, excludeTracked bool) {
+		for _, id := range candidates {
+			if len(ids) == total || (limit > 0 && len(ids) >= limit) {
+				return
+			}
+			if _, seen := seenSet[id]; seen {
+				continue
+			}
+			if _, selected := selectedSet[id]; selected {
+				continue
+			}
+			if excludeTracked {
+				if _, tracked := trackedSet[id]; tracked {
+					continue
+				}
+			}
+			selectedSet[id] = struct{}{}
+			ids = append(ids, id)
+		}
+	}
+
+	watchlistTarget := (total + 1) / 2
+	addIDs(watchlistIDs, watchlistTarget, false)
+
+	trendingPage, err := s.tmdb.GetTrending(ctx, "movie", randomTimeWindow, rand.Intn(reelsMaxPages)+1)
+	if err != nil {
+		return nil, fmt.Errorf("movie service: reels trending: %w", err)
+	}
+	trendingIDs := make([]int64, 0, len(trendingPage.Results))
+	for _, movie := range trendingPage.Results {
+		trendingIDs = append(trendingIDs, movie.ID)
+	}
+	rand.Shuffle(len(trendingIDs), func(i, j int) { trendingIDs[i], trendingIDs[j] = trendingIDs[j], trendingIDs[i] })
+	trendingTarget := len(ids) + (total-len(ids)+1)/2
+	addIDs(trendingIDs, trendingTarget, true)
+
+	popularPage, err := s.tmdb.Discover(ctx, "movie", 0, rand.Intn(reelsMaxPages)+1)
+	if err != nil {
+		return nil, fmt.Errorf("movie service: reels popular: %w", err)
+	}
+	popularIDs := make([]int64, 0, len(popularPage.Results))
+	for _, movie := range popularPage.Results {
+		popularIDs = append(popularIDs, movie.ID)
+	}
+	rand.Shuffle(len(popularIDs), func(i, j int) { popularIDs[i], popularIDs[j] = popularIDs[j], popularIDs[i] })
+	addIDs(popularIDs, total, true)
+
+	// One source can be sparse (for example a short watchlist), so use the
+	// remaining candidates as backfill before returning a partial feed.
+	addIDs(watchlistIDs, total, false)
+	addIDs(trendingIDs, total, true)
+	addIDs(popularIDs, total, true)
+
+	if len(ids) == 0 && resetSeenWhenExhausted && len(seenIDs) > 0 {
+		_ = s.cache.Delete(ctx, reelsSeenKey(userID))
+		return s.reels(ctx, userID, total, false)
+	}
+
+	results, err := s.enrichMovieIDs(ctx, ids)
+	if err != nil {
+		return nil, err
+	}
+	filtered := make([]MovieResponse, 0, len(results))
+	for _, movie := range results {
+		if isAcceptableMovie(movie) {
+			filtered = append(filtered, movie)
+		}
+	}
+	rand.Shuffle(len(filtered), func(i, j int) { filtered[i], filtered[j] = filtered[j], filtered[i] })
+
+	servedIDs := make([]int64, len(filtered))
+	for i, movie := range filtered {
+		servedIDs[i] = movie.ID
+	}
+	s.saveSeenIDs(ctx, reelsSeenKey(userID), seenIDs, servedIDs)
+	return filtered, nil
 }
 
 // trackedExcludeIDs returns the set of movie ids the user has tracked with an

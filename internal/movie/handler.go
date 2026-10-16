@@ -34,6 +34,7 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux, auth func(http.Handler) htt
 	mux.Handle("GET /movie/recommendations", auth(http.HandlerFunc(h.Recommendations)))
 	mux.Handle("GET /movie/search", auth(http.HandlerFunc(h.Search)))
 	mux.Handle("GET /movie/random", auth(http.HandlerFunc(h.Random)))
+	mux.Handle("GET /movie/reels", auth(http.HandlerFunc(h.Reels)))
 	mux.Handle("GET /movie/trending", auth(http.HandlerFunc(h.Trending)))
 	mux.Handle("GET /movie/{id}", auth(http.HandlerFunc(h.GetByID)))
 }
@@ -223,6 +224,49 @@ func (h *Handler) Random(w http.ResponseWriter, r *http.Request) {
 
 	response.Success(w, http.StatusOK, response.Page[MovieResponse]{
 		Page:         page,
+		TotalResults: len(results),
+		TotalPages:   1,
+		Results:      results,
+	})
+}
+
+// Reels returns a shuffled trailer-feed selection from the user's watchlist,
+// TMDB trending, and TMDB popular movies. Recently served titles are excluded.
+//
+//	@Summary		Random movie trailer feed
+//	@Description	Returns a shuffled mix of watchlist, trending, and popular movies. Recently served titles are excluded per user so loading another feed surfaces different movies.
+//	@Tags			movies
+//	@Produce		json
+//	@Security		BearerAuth
+//	@Param			total	query	int	false	"Number of results (default 12, maximum 20)"
+//	@Success		200	{object}	response.Page[movie.MovieResponse]
+//	@Failure		401	{object}	map[string]string
+//	@Failure		500	{object}	map[string]string
+//	@Router			/movie/reels [get]
+func (h *Handler) Reels(w http.ResponseWriter, r *http.Request) {
+	userID, ok := middleware.UserIDFromContext(r.Context())
+	if !ok {
+		response.Error(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
+	total := intParam(r.URL.Query().Get("total"), 12)
+	if total < 1 {
+		total = 12
+	}
+	if total > 20 {
+		total = 20
+	}
+
+	results, err := h.service.Reels(r.Context(), userID, total)
+	if err != nil {
+		h.log.Error("failed to get movie reels", "error", err, "user", userID, "path", r.URL.Path)
+		response.Error(w, http.StatusInternalServerError, "failed to get movie reels")
+		return
+	}
+
+	response.Success(w, http.StatusOK, response.Page[MovieResponse]{
+		Page:         1,
 		TotalResults: len(results),
 		TotalPages:   1,
 		Results:      results,
