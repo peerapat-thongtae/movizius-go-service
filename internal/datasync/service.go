@@ -547,8 +547,8 @@ func (s *SyncService) PruneUnacceptableMovie(ctx context.Context, dryRun bool) (
 }
 
 // PruneUnacceptableTV deletes tv documents that fail the acceptability filter and are not tracked in
-// tv_user. When dryRun is true it returns the ids that would be deleted without deleting.
-func (s *SyncService) PruneUnacceptableTV(ctx context.Context, dryRun bool) ([]int64, error) {
+// tv_user. When dryRun is true it returns the candidates that would be deleted without deleting.
+func (s *SyncService) PruneUnacceptableTV(ctx context.Context, dryRun bool) ([]tv.PruneCandidate, error) {
 	return s.tvSync.PruneUnacceptableUntracked(ctx, dryRun)
 }
 

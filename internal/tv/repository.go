@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"sort"
 	"strings"
 	"time"
 
@@ -27,7 +28,7 @@ type TVRepository interface {
 	UpsertDetail(ctx context.Context, data TVResponse) error
 	DeleteByTMDBID(ctx context.Context, id int64) error
 	ReconcilePopularity(ctx context.Context, export map[int64]float64, maxDeleteRatio float64) (ReconcileResult, error)
-	PruneUnacceptableUntracked(ctx context.Context, dryRun bool) ([]int64, error)
+	PruneUnacceptableUntracked(ctx context.Context, dryRun bool) ([]PruneCandidate, error)
 	UpdateNextEpisodeAirDates(ctx context.Context, updates []NextEpisodeAirDateUpdate) error
 	GetNextEpisodeAirDatesByIDs(ctx context.Context, ids []int64) (map[int64]string, error)
 	// FindByUserID returns all of a user's raw TV tracking docs.
@@ -47,6 +48,14 @@ type RecommendationCriteria struct {
 	CastIDs    []int64
 	CreatorIDs []int64
 	CompanyIDs []int64
+}
+
+// PruneCandidate is a catalog series selected by the unacceptable-data cleanup.
+// Candidates are ordered by popularity descending for dry-run review.
+type PruneCandidate struct {
+	ID         int64   `json:"id"`
+	Name       string  `json:"name"`
+	Popularity float64 `json:"popularity"`
 }
 
 func (c RecommendationCriteria) empty() bool {
@@ -341,9 +350,9 @@ func (r *mongoTVRepository) DeleteByTMDBID(ctx context.Context, id int64) error 
 }
 
 // PruneUnacceptableUntracked deletes tv documents that fail the acceptability filter and are not
-// tracked by any user (absent from tv_user). It returns the ids that were deleted; when dryRun is true
-// it returns the same set of candidate ids without deleting anything.
-func (r *mongoTVRepository) PruneUnacceptableUntracked(ctx context.Context, dryRun bool) ([]int64, error) {
+// tracked by any user (absent from tv_user). It returns the selected series; when dryRun is true
+// it returns the same candidates without deleting anything.
+func (r *mongoTVRepository) PruneUnacceptableUntracked(ctx context.Context, dryRun bool) ([]PruneCandidate, error) {
 	trackedRaw, err := r.db.Collection("tv_user").Distinct(ctx, "id", bson.M{})
 	if err != nil {
 		return nil, fmt.Errorf("tv: prune distinct tracked ids: %w", err)
@@ -358,14 +367,14 @@ func (r *mongoTVRepository) PruneUnacceptableUntracked(ctx context.Context, dryR
 		}
 	}
 
-	projection := bson.M{"_id": 0, "id": 1, "popularity": 1, "genres": 1, "original_language": 1, "status": 1, "type": 1}
+	projection := bson.M{"_id": 0, "id": 1, "name": 1, "popularity": 1, "vote_count": 1, "poster_path": 1, "genres": 1, "original_language": 1, "status": 1, "type": 1}
 	cursor, err := r.db.Collection("tv").Find(ctx, bson.M{}, options.Find().SetProjection(projection))
 	if err != nil {
 		return nil, fmt.Errorf("tv: prune find: %w", err)
 	}
 	defer cursor.Close(ctx)
 
-	var toDelete []int64
+	var candidates []PruneCandidate
 	for cursor.Next(ctx) {
 		var t TV
 		if err := cursor.Decode(&t); err != nil {
@@ -375,15 +384,30 @@ func (r *mongoTVRepository) PruneUnacceptableUntracked(ctx context.Context, dryR
 			continue
 		}
 		if !isAcceptableTVDoc(t) {
-			toDelete = append(toDelete, t.TVID)
+			var popularity float64
+			if t.Popularity != nil {
+				popularity = *t.Popularity
+			}
+			candidates = append(candidates, PruneCandidate{ID: t.TVID, Name: t.Name, Popularity: popularity})
 		}
 	}
 	if err := cursor.Err(); err != nil {
 		return nil, fmt.Errorf("tv: prune cursor: %w", err)
 	}
 
+	sort.Slice(candidates, func(i, j int) bool {
+		if candidates[i].Popularity != candidates[j].Popularity {
+			return candidates[i].Popularity > candidates[j].Popularity
+		}
+		return candidates[i].ID < candidates[j].ID
+	})
 	if dryRun {
-		return toDelete, nil
+		return candidates, nil
+	}
+
+	toDelete := make([]int64, len(candidates))
+	for i, candidate := range candidates {
+		toDelete[i] = candidate.ID
 	}
 
 	for start := 0; start < len(toDelete); start += reconcileDeleteBatch {
@@ -400,7 +424,7 @@ func (r *mongoTVRepository) PruneUnacceptableUntracked(ctx context.Context, dryR
 		}
 	}
 
-	return toDelete, nil
+	return candidates, nil
 }
 
 // reconcileUpdateBatch is the number of popularity updates flushed per BulkWrite.

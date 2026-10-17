@@ -14,16 +14,24 @@ var unwantedGenreIDs = map[int64]bool{
 }
 
 var earlyStageStatuses = map[string]bool{
-	"Planned":       true,
-	"In Production": true,
+	"Planned":         true,
+	"In Production":   true,
+	"Post Production": true,
 }
+
+const (
+	minimumTVPopularity                 = 6
+	minimumPopularityForVoteOverride    = 2
+	minimumVotesToRetainLowPopularityTV = 500
+	minimumThaiTVPopularity             = 0.7
+)
 
 func isAcceptableTV(detail TVResponse) bool {
 	genreIDs := make([]int64, 0, len(detail.Genres))
 	for _, g := range detail.Genres {
 		genreIDs = append(genreIDs, g.ID)
 	}
-	return acceptableTV(detail.Adult, detail.Type, detail.OriginalLanguage, detail.Status, detail.Popularity, genreIDs)
+	return acceptableTV(detail.Adult, detail.Type, detail.OriginalLanguage, detail.Status, detail.Popularity, detail.VoteCount, detail.PosterPath, genreIDs)
 }
 
 // isAcceptableTVDoc evaluates acceptability against a stored tv document. The adult flag is not
@@ -32,6 +40,7 @@ func isAcceptableTVDoc(t TV) bool {
 	var (
 		typ        string
 		popularity float64
+		voteCount  int64
 	)
 	if t.Type != nil {
 		typ = *t.Type
@@ -39,15 +48,29 @@ func isAcceptableTVDoc(t TV) bool {
 	if t.Popularity != nil {
 		popularity = *t.Popularity
 	}
-	return acceptableTV(false, typ, t.OriginalLanguage, t.Status, popularity, t.Genres)
+	if t.VoteCount != nil {
+		voteCount = *t.VoteCount
+	}
+	return acceptableTV(false, typ, t.OriginalLanguage, t.Status, popularity, voteCount, t.PosterPath, t.Genres)
 }
 
 // acceptableTV holds the shared tv acceptability rules over primitive fields.
-func acceptableTV(adult bool, typ, lang, status string, popularity float64, genreIDs []int64) bool {
+func acceptableTV(adult bool, typ, lang, status string, popularity float64, voteCount int64, posterPath string, genreIDs []int64) bool {
 	if adult {
 		return false
 	}
-	if typ != "" && typ != "Miniseries" && typ != "Scripted" {
+	if typ != "Miniseries" && typ != "Scripted" {
+		return false
+	}
+	if status == "Rumored" {
+		return false
+	}
+	// Retain Thai series even when TMDB metadata is sparse, provided they have
+	// a minimal popularity signal. Type and safety/status checks still apply.
+	if lang == "th" {
+		return popularity > minimumThaiTVPopularity
+	}
+	if posterPath == "" && !earlyStageStatuses[status] {
 		return false
 	}
 	if !availableLanguages[lang] {
@@ -61,7 +84,13 @@ func acceptableTV(adult bool, typ, lang, status string, popularity float64, genr
 			return false
 		}
 	}
-	if popularity <= 5 && !earlyStageStatuses[status] {
+	if earlyStageStatuses[status] {
+		return true
+	}
+	if popularity > minimumTVPopularity {
+		return true
+	}
+	if popularity < minimumPopularityForVoteOverride || voteCount < minimumVotesToRetainLowPopularityTV {
 		return false
 	}
 	return true
