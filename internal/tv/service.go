@@ -460,31 +460,15 @@ func (s *TVService) trackedExcludeIDs(ctx context.Context, userID string, withou
 	return excludeSet, nil
 }
 
-// searchResult is a minimal TMDB search result used only to collect IDs.
-type searchResult struct {
-	ID int64 `json:"id"`
-}
-
-// Search queries TMDB for TV series, fetches full detail for each result, then merges
-// with cached DB records (DB fields take precedence for vote_average/vote_count).
+// Search finds TV series in the local catalog by name, then enriches the
+// matched series with their full TMDB detail payload.
 func (s *TVService) Search(ctx context.Context, query string, page int) (*response.Page[TVResponse], error) {
-	var tmdbResult tmdb.SearchPage[searchResult]
-	if err := s.tmdb.SearchTV(ctx, query, page, &tmdbResult); err != nil {
-		return nil, fmt.Errorf("tv service: search tmdb: %w", err)
+	ids, total, err := s.repo.SearchIDs(ctx, query, page)
+	if err != nil {
+		return nil, fmt.Errorf("tv service: search local catalog: %w", err)
 	}
-
-	if len(tmdbResult.Results) == 0 {
-		return &response.Page[TVResponse]{
-			Page:         tmdbResult.Page,
-			TotalPages:   tmdbResult.TotalPages,
-			TotalResults: tmdbResult.TotalResults,
-			Results:      []TVResponse{},
-		}, nil
-	}
-
-	ids := make([]int64, len(tmdbResult.Results))
-	for i, r := range tmdbResult.Results {
-		ids[i] = r.ID
+	if len(ids) == 0 {
+		return &response.Page[TVResponse]{Page: page, TotalPages: max(1, (total+19)/20), TotalResults: total, Results: []TVResponse{}}, nil
 	}
 
 	details := make([]TVResponse, len(ids))
@@ -496,7 +480,7 @@ func (s *TVService) Search(ctx context.Context, query string, page int) (*respon
 			defer wg.Done()
 			var detail TVResponse
 			if err := s.tmdb.GetTVDetail(ctx, tvID, appendToResponse, &detail); err != nil {
-				errs[idx] = fmt.Errorf("tmdb detail for id %d: %w", tvID, err)
+				errs[idx] = err
 				return
 			}
 			detail.MediaType = "tv"
@@ -507,35 +491,21 @@ func (s *TVService) Search(ctx context.Context, query string, page int) (*respon
 		}(i, id)
 	}
 	wg.Wait()
-
 	for _, err := range errs {
 		if err != nil {
 			return nil, fmt.Errorf("tv service: search enrich from tmdb: %w", err)
 		}
 	}
-
 	cached, err := s.repo.FindByTMDBIDs(ctx, ids)
 	if err != nil {
 		return nil, fmt.Errorf("tv service: fetch cached tv: %w", err)
 	}
-
 	for i, detail := range details {
 		if db, ok := cached[detail.ID]; ok {
-			if db.VoteAverage != nil {
-				details[i].VoteAverage = *db.VoteAverage
-			}
-			if db.VoteCount != nil {
-				details[i].VoteCount = *db.VoteCount
-			}
+			overlayDBFields(&details[i], db)
 		}
 	}
-
-	return &response.Page[TVResponse]{
-		Page:         tmdbResult.Page,
-		TotalPages:   tmdbResult.TotalPages,
-		TotalResults: tmdbResult.TotalResults,
-		Results:      details,
-	}, nil
+	return &response.Page[TVResponse]{Page: page, TotalPages: max(1, (total+19)/20), TotalResults: total, Results: details}, nil
 }
 
 // Trending returns TMDB's trending TV series for the given time window, enriched with

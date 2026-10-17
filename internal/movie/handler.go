@@ -78,10 +78,10 @@ func (h *Handler) RandomRecommendations(w http.ResponseWriter, r *http.Request) 
 	})
 }
 
-// Search searches TMDB for movies matching a query and enriches results with cached DB data.
+// Search finds movies by title in the local catalog and enriches the selected results.
 //
 //	@Summary		Search movies
-//	@Description	Search TMDB for movies. Results are enriched with genres and metadata from the local cache when available.
+//	@Description	Search the local catalog by title or original title. Results include full metadata for the matching titles.
 //	@Tags			movies
 //	@Produce		json
 //	@Security		BearerAuth

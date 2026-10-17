@@ -309,7 +309,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Search TMDB for movies. Results are enriched with genres and metadata from the local cache when available.",
+                "description": "Search the local catalog by title or original title. Results include full metadata for the matching titles.",
                 "produces": [
                     "application/json"
                 ],
@@ -1010,7 +1010,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Search TMDB for TV series. Results are enriched with genres and metadata from the local cache when available.",
+                "description": "Search the local catalog by name or original name. Results include full metadata for the matching titles.",
                 "produces": [
                     "application/json"
                 ],

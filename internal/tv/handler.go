@@ -101,10 +101,10 @@ func (h *Handler) Recommendations(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// Search searches TMDB for TV series matching a query and enriches results with cached DB data.
+// Search finds TV series by name in the local catalog and enriches the selected results.
 //
 //	@Summary		Search TV series
-//	@Description	Search TMDB for TV series. Results are enriched with genres and metadata from the local cache when available.
+//	@Description	Search the local catalog by name or original name. Results include full metadata for the matching titles.
 //	@Tags			tv
 //	@Produce		json
 //	@Security		BearerAuth

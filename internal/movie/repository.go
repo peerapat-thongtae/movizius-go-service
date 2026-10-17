@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 
@@ -18,6 +19,7 @@ import (
 type MovieRepository interface {
 	FindByUserID(ctx context.Context, userID string) ([]MovieUser, error)
 	FindByTMDBIDs(ctx context.Context, ids []int64) (map[int64]Movie, error)
+	SearchIDs(ctx context.Context, query string, page int) (ids []int64, total int, err error)
 	DiscoverIDs(ctx context.Context, userID string, q DiscoverQuery) (ids []int64, total int, err error)
 	UpsertState(ctx context.Context, userID string, req UpsertStateRequest) error
 	UpsertDetail(ctx context.Context, data MovieResponse) error
@@ -95,6 +97,83 @@ func (r *mongoMovieRepository) FindByTMDBIDs(ctx context.Context, ids []int64) (
 		result[m.MovieID] = m
 	}
 	return result, cursor.Err()
+}
+
+// SearchIDs ranks local title matches as exact, prefix, then contains matches.
+func (r *mongoMovieRepository) SearchIDs(ctx context.Context, query string, page int) ([]int64, int, error) {
+	pipeline := buildTitleSearchPipeline(query, page, "title", "original_title")
+	cursor, err := r.db.Collection("movie").Aggregate(ctx, pipeline)
+	if err != nil {
+		return nil, 0, fmt.Errorf("movie: search aggregate: %w", err)
+	}
+	defer cursor.Close(ctx)
+	var result []searchFacetResult
+	if err := cursor.All(ctx, &result); err != nil {
+		return nil, 0, fmt.Errorf("movie: decode search: %w", err)
+	}
+	return searchFacet(result)
+}
+
+type searchFacetResult struct {
+	Metadata []struct {
+		Total int `bson:"total"`
+	} `bson:"metadata"`
+	Data []struct {
+		ID int64 `bson:"id"`
+	} `bson:"data"`
+}
+
+func searchFacet(result []searchFacetResult) ([]int64, int, error) {
+	if len(result) == 0 {
+		return nil, 0, nil
+	}
+	ids := make([]int64, 0, len(result[0].Data))
+	for _, item := range result[0].Data {
+		ids = append(ids, item.ID)
+	}
+	if len(result[0].Metadata) == 0 {
+		return ids, 0, nil
+	}
+	return ids, result[0].Metadata[0].Total, nil
+}
+
+func buildTitleSearchPipeline(query string, page int, titleField, originalTitleField string) bson.A {
+	const pageSize = 20
+	quoted := regexp.QuoteMeta(strings.TrimSpace(query))
+	matchAny := func(pattern string) bson.D {
+		return bson.D{{Key: "$or", Value: bson.A{
+			bson.D{{Key: titleField, Value: bson.D{{Key: "$regex", Value: pattern}, {Key: "$options", Value: "i"}}}},
+			bson.D{{Key: originalTitleField, Value: bson.D{{Key: "$regex", Value: pattern}, {Key: "$options", Value: "i"}}}},
+		}}}
+	}
+	// $switch.case is an aggregation expression, so it must use $regexMatch
+	// rather than the $regex query operator used by the initial $match stage.
+	matchesExpression := func(pattern string) bson.D {
+		return bson.D{{Key: "$or", Value: bson.A{
+			bson.D{{Key: "$regexMatch", Value: bson.D{{Key: "input", Value: bson.D{{Key: "$ifNull", Value: bson.A{"$" + titleField, ""}}}}, {Key: "regex", Value: pattern}, {Key: "options", Value: "i"}}}},
+			bson.D{{Key: "$regexMatch", Value: bson.D{{Key: "input", Value: bson.D{{Key: "$ifNull", Value: bson.A{"$" + originalTitleField, ""}}}}, {Key: "regex", Value: pattern}, {Key: "options", Value: "i"}}}},
+		}}}
+	}
+	rank := bson.D{{Key: "$switch", Value: bson.D{
+		{Key: "branches", Value: bson.A{
+			bson.D{{Key: "case", Value: matchesExpression("^" + quoted + "$")}, {Key: "then", Value: 3}},
+			bson.D{{Key: "case", Value: matchesExpression("^" + quoted)}, {Key: "then", Value: 2}},
+		}},
+		{Key: "default", Value: 1},
+	}}}
+	return bson.A{
+		bson.D{{Key: "$match", Value: matchAny(quoted)}},
+		bson.D{{Key: "$addFields", Value: bson.D{{Key: "_search_rank", Value: rank}}}},
+		bson.D{{Key: "$sort", Value: bson.D{{Key: "_search_rank", Value: -1}, {Key: "popularity", Value: -1}, {Key: "vote_count", Value: -1}, {Key: "id", Value: 1}}}},
+		bson.D{{Key: "$facet", Value: bson.D{
+			{Key: "metadata", Value: bson.A{bson.D{{Key: "$count", Value: "total"}}}},
+			{Key: "data", Value: bson.A{
+				bson.D{{Key: "$skip", Value: (page - 1) * pageSize}},
+				bson.D{{Key: "$limit", Value: pageSize}},
+				bson.D{{Key: "$project", Value: bson.D{{Key: "_id", Value: 0}, {Key: "id", Value: 1}}}},
+			}},
+		}}},
+	}
 }
 
 func (r *mongoMovieRepository) UpsertState(ctx context.Context, userID string, req UpsertStateRequest) error {
