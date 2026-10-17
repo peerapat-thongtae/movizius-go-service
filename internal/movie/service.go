@@ -43,6 +43,14 @@ const recommendationsPageSize = 20
 // fetched from the local cache and scored in Go per request.
 const recommendationCandidateLimit = 300
 
+// heroResultLimit is deliberately fixed: Hero is a curated rail, not a
+// paginated browsing surface.
+const heroResultLimit = 20
+
+// heroMaxPages bounds how far we scan TMDB Trending when watched, missing, or
+// unacceptable titles leave a sparse page after the local-catalog gate.
+const heroMaxPages = 25
+
 // MovieAffinity holds a user's recommendation-profile scores (-100..100) for
 // the entity buckets relevant to ranking movie candidates, keyed by TMDB
 // entity id, plus the profile's watched-titles exclusion list. Defined here
@@ -785,6 +793,62 @@ func (s *MovieService) Trending(ctx context.Context, timeWindow string, page int
 		TotalResults: trendingPage.TotalResults,
 		Results:      results,
 	}, nil
+}
+
+// Hero returns exactly up to heroResultLimit currently trending movies that
+// exist in the local catalog and have not been watched by the user. It scans
+// further TMDB trending pages whenever a page becomes sparse after filtering;
+// this is intentionally not a paginated endpoint.
+func (s *MovieService) Hero(ctx context.Context, userID string) ([]MovieResponse, error) {
+	states, err := s.repo.FindByUserID(ctx, userID)
+	if err != nil {
+		return nil, fmt.Errorf("movie service: hero states: %w", err)
+	}
+	watched := make(map[int64]struct{}, len(states))
+	for _, state := range states {
+		if state.WatchedAt != nil {
+			watched[state.MovieID] = struct{}{}
+		}
+	}
+
+	results := make([]MovieResponse, 0, heroResultLimit)
+	selected := make(map[int64]struct{}, heroResultLimit)
+	for page := 1; page <= heroMaxPages && len(results) < heroResultLimit; page++ {
+		trendingPage, err := s.tmdb.GetTrending(ctx, "movie", randomTimeWindow, page)
+		if err != nil {
+			return nil, fmt.Errorf("movie service: hero trending page %d: %w", page, err)
+		}
+		if len(trendingPage.Results) == 0 {
+			break
+		}
+
+		candidateIDs := make([]int64, 0, len(trendingPage.Results))
+		for _, movie := range trendingPage.Results {
+			if _, alreadyWatched := watched[movie.ID]; alreadyWatched {
+				continue
+			}
+			if _, alreadySelected := selected[movie.ID]; alreadySelected {
+				continue
+			}
+			candidateIDs = append(candidateIDs, movie.ID)
+		}
+		details, err := s.enrichMovieIDs(ctx, candidateIDs)
+		if err != nil {
+			return nil, fmt.Errorf("movie service: hero enrich page %d: %w", page, err)
+		}
+		for _, movie := range details {
+			if !isAcceptableMovie(movie) || movie.BackdropPath == "" {
+				continue
+			}
+			selected[movie.ID] = struct{}{}
+			results = append(results, movie)
+			if len(results) == heroResultLimit {
+				break
+			}
+		}
+	}
+
+	return results, nil
 }
 
 // GetByID returns detail for a single movie when it exists in the local catalog.

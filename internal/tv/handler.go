@@ -35,6 +35,7 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux, auth func(http.Handler) htt
 	mux.Handle("GET /tv/recommendations", auth(http.HandlerFunc(h.Recommendations)))
 	mux.Handle("GET /tv/search", auth(http.HandlerFunc(h.Search)))
 	mux.Handle("GET /tv/random", auth(http.HandlerFunc(h.Random)))
+	mux.Handle("GET /tv/hero", auth(http.HandlerFunc(h.Hero)))
 	mux.Handle("GET /tv/trending", auth(http.HandlerFunc(h.Trending)))
 	mux.Handle("GET /tv/{id}", auth(http.HandlerFunc(h.GetByID)))
 	mux.Handle("GET /tv/{id}/season/{season_number}", auth(http.HandlerFunc(h.GetSeason)))
@@ -304,6 +305,24 @@ func (h *Handler) Trending(w http.ResponseWriter, r *http.Request) {
 	}
 
 	response.Success(w, http.StatusOK, result)
+}
+
+// Hero returns a fixed, non-paginated set of unwatched trending TV series for
+// the home hero. The service backfills from later TMDB pages as needed.
+func (h *Handler) Hero(w http.ResponseWriter, r *http.Request) {
+	userID, ok := middleware.UserIDFromContext(r.Context())
+	if !ok {
+		response.Error(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
+	results, err := h.service.Hero(r.Context(), userID)
+	if err != nil {
+		h.log.Error("failed to fetch tv hero", "error", err, "user", userID, "path", r.URL.Path)
+		response.Error(w, http.StatusInternalServerError, "failed to fetch tv hero")
+		return
+	}
+	response.Success(w, http.StatusOK, results)
 }
 
 // GetByID returns full TMDB detail for a single TV series.

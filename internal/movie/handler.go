@@ -35,6 +35,7 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux, auth func(http.Handler) htt
 	mux.Handle("GET /movie/search", auth(http.HandlerFunc(h.Search)))
 	mux.Handle("GET /movie/random", auth(http.HandlerFunc(h.Random)))
 	mux.Handle("GET /movie/reels", auth(http.HandlerFunc(h.Reels)))
+	mux.Handle("GET /movie/hero", auth(http.HandlerFunc(h.Hero)))
 	mux.Handle("GET /movie/trending", auth(http.HandlerFunc(h.Trending)))
 	mux.Handle("GET /movie/{id}", auth(http.HandlerFunc(h.GetByID)))
 }
@@ -316,6 +317,24 @@ func (h *Handler) Trending(w http.ResponseWriter, r *http.Request) {
 	}
 
 	response.Success(w, http.StatusOK, result)
+}
+
+// Hero returns a fixed, non-paginated set of unwatched trending movies for
+// the home hero. The service backfills from later TMDB pages as needed.
+func (h *Handler) Hero(w http.ResponseWriter, r *http.Request) {
+	userID, ok := middleware.UserIDFromContext(r.Context())
+	if !ok {
+		response.Error(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
+	results, err := h.service.Hero(r.Context(), userID)
+	if err != nil {
+		h.log.Error("failed to fetch movie hero", "error", err, "user", userID, "path", r.URL.Path)
+		response.Error(w, http.StatusInternalServerError, "failed to fetch movie hero")
+		return
+	}
+	response.Success(w, http.StatusOK, results)
 }
 
 // GetByID returns full TMDB detail for a single movie.

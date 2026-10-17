@@ -33,6 +33,10 @@ const randomTimeWindow = "day"
 const recommendationsPageSize = 20
 const recommendationCandidateLimit = 300
 
+// Hero is a fixed curated rail rather than a paginated browsing surface.
+const heroResultLimit = 20
+const heroMaxPages = 25
+
 type TVAffinity struct {
 	Genres              map[int64]int
 	Keywords            map[int64]int
@@ -569,6 +573,61 @@ func (s *TVService) Trending(ctx context.Context, timeWindow string, page int) (
 		TotalResults: trendingPage.TotalResults,
 		Results:      results,
 	}, nil
+}
+
+// Hero returns exactly up to heroResultLimit currently trending series that
+// exist in the local catalog and are neither watched nor waiting for the next
+// episode. It scans more TMDB pages whenever filtering leaves a sparse result.
+func (s *TVService) Hero(ctx context.Context, userID string) ([]TVResponse, error) {
+	states, err := s.repo.GetStatesByUserID(ctx, userID)
+	if err != nil {
+		return nil, fmt.Errorf("tv service: hero states: %w", err)
+	}
+	excluded := make(map[int64]struct{}, len(states))
+	for _, state := range states {
+		if state.AccountStatus == "watched" || state.AccountStatus == "waiting_next_ep" {
+			excluded[state.TVID] = struct{}{}
+		}
+	}
+
+	results := make([]TVResponse, 0, heroResultLimit)
+	selected := make(map[int64]struct{}, heroResultLimit)
+	for page := 1; page <= heroMaxPages && len(results) < heroResultLimit; page++ {
+		trendingPage, err := s.tmdb.GetTrending(ctx, "tv", randomTimeWindow, page)
+		if err != nil {
+			return nil, fmt.Errorf("tv service: hero trending page %d: %w", page, err)
+		}
+		if len(trendingPage.Results) == 0 {
+			break
+		}
+
+		candidateIDs := make([]int64, 0, len(trendingPage.Results))
+		for _, show := range trendingPage.Results {
+			if _, isExcluded := excluded[show.ID]; isExcluded {
+				continue
+			}
+			if _, alreadySelected := selected[show.ID]; alreadySelected {
+				continue
+			}
+			candidateIDs = append(candidateIDs, show.ID)
+		}
+		details, err := s.GetByIDs(ctx, candidateIDs)
+		if err != nil {
+			return nil, fmt.Errorf("tv service: hero enrich page %d: %w", page, err)
+		}
+		for _, show := range details {
+			if !isAcceptableTV(show) || show.BackdropPath == "" {
+				continue
+			}
+			selected[show.ID] = struct{}{}
+			results = append(results, show)
+			if len(results) == heroResultLimit {
+				break
+			}
+		}
+	}
+
+	return results, nil
 }
 
 // GetByID returns detail for a single TV series when it exists in the local
