@@ -16,8 +16,10 @@ type SyncRepository interface {
 	GetSyncMeta(ctx context.Context, syncKey string) (*SyncMeta, error)
 	UpdateSyncMeta(ctx context.Context, syncKey string, metaUpdate bson.M, status string, syncDate *time.Time) error
 	CountMovieIDs(ctx context.Context) (int, error)
+	CountMovieIDsUpdatedBefore(ctx context.Context, before time.Time) (int, error)
 	CountTVIDs(ctx context.Context) (int, error)
 	GetMovieIDsPage(ctx context.Context, offset, limit int) ([]int64, error)
+	GetMovieIDsUpdatedBefore(ctx context.Context, before time.Time, afterID int64, limit int) ([]int64, error)
 	GetTVIDsPage(ctx context.Context, offset, limit int) ([]int64, error)
 }
 
@@ -72,12 +74,51 @@ func (r *mongoSyncRepository) CountMovieIDs(ctx context.Context) (int, error) {
 	return countDocs(ctx, r.db.Collection("movie_user"))
 }
 
+func (r *mongoSyncRepository) CountMovieIDsUpdatedBefore(ctx context.Context, before time.Time) (int, error) {
+	n, err := r.db.Collection("movie").CountDocuments(ctx, bson.M{"updated_at": bson.M{"$lt": before}})
+	if err != nil {
+		return 0, fmt.Errorf("datasync: count stale movie catalog: %w", err)
+	}
+	return int(n), nil
+}
+
 func (r *mongoSyncRepository) CountTVIDs(ctx context.Context) (int, error) {
 	return countDocs(ctx, r.db.Collection("tv_user"))
 }
 
 func (r *mongoSyncRepository) GetMovieIDsPage(ctx context.Context, offset, limit int) ([]int64, error) {
 	return getIDsPage(ctx, r.db.Collection("movie_user"), offset, limit)
+}
+
+// GetMovieIDsUpdatedBefore returns one stable ID-ordered page from the stale movie
+// catalog. Cursor paging is required because successful syncs update updated_at and
+// would make offset paging skip documents from the shrinking result set.
+func (r *mongoSyncRepository) GetMovieIDsUpdatedBefore(ctx context.Context, before time.Time, afterID int64, limit int) ([]int64, error) {
+	filter := bson.M{
+		"updated_at": bson.M{"$lt": before},
+		"id":         bson.M{"$gt": afterID},
+	}
+	opts := options.Find().
+		SetLimit(int64(limit)).
+		SetSort(bson.D{{Key: "id", Value: 1}}).
+		SetProjection(bson.M{"_id": 0, "id": 1})
+	cursor, err := r.db.Collection("movie").Find(ctx, filter, opts)
+	if err != nil {
+		return nil, fmt.Errorf("datasync: stale movie catalog page: %w", err)
+	}
+	defer cursor.Close(ctx)
+
+	var docs []struct {
+		ID int64 `bson:"id"`
+	}
+	if err := cursor.All(ctx, &docs); err != nil {
+		return nil, fmt.Errorf("datasync: decode stale movie catalog page: %w", err)
+	}
+	ids := make([]int64, len(docs))
+	for i, doc := range docs {
+		ids[i] = doc.ID
+	}
+	return ids, nil
 }
 
 func (r *mongoSyncRepository) GetTVIDsPage(ctx context.Context, offset, limit int) ([]int64, error) {

@@ -9,6 +9,7 @@ import (
 
 const (
 	SourceUserTracked  = "user_tracked"
+	SourceCatalogStale = "catalog_stale"
 	SourceTMDBTrending = "tmdb_trending"
 	SourceTMDBChanges  = "tmdb_changes"
 

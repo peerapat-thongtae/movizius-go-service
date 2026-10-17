@@ -29,6 +29,7 @@ func NewHandler(service *SyncService, log *slog.Logger) *Handler {
 // RegisterRoutes registers sync endpoints on the provided mux.
 func (h *Handler) RegisterRoutes(mux *http.ServeMux, auth func(http.Handler) http.Handler) {
 	mux.HandleFunc("POST /sync/movie/by-ids", h.SyncMovieByIDs)
+	mux.HandleFunc("POST /sync/movie/catalog", h.SyncMovieCatalog)
 	mux.HandleFunc("POST /sync/tv/by-ids", h.SyncTVByIDs)
 	mux.HandleFunc("POST /sync/movie/tracked", h.SyncMovieUserTracked)
 	mux.HandleFunc("POST /sync/tv/tracked", h.SyncTVUserTracked)
@@ -39,6 +40,25 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux, auth func(http.Handler) htt
 	mux.HandleFunc("POST /sync/tv/tvmaze-schedule", h.SyncTVMazeSchedule)
 	mux.HandleFunc("POST /sync/movie/prune-unacceptable", h.PruneUnacceptableMovie)
 	mux.HandleFunc("POST /sync/tv/prune-unacceptable", h.PruneUnacceptableTV)
+}
+
+// SyncMovieCatalog refreshes one chunk of movies whose cached metadata is older
+// than older_than_days (default 15). Calls resume from the stored cursor until
+// the job is complete. limit controls the number of TMDB detail requests here.
+func (h *Handler) SyncMovieCatalog(w http.ResponseWriter, r *http.Request) {
+	result, err := h.service.SyncMovieCatalog(
+		r.Context(),
+		parseOlderThanDays(r),
+		parseLimit(r),
+		parseSkipAcceptable(r),
+		parseForce(r),
+	)
+	if err != nil {
+		h.log.Error("sync operation failed", "error", err, "path", r.URL.Path)
+		response.Error(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	response.Success(w, http.StatusOK, result)
 }
 
 // SyncMovieByIDs syncs TMDB metadata for the movie IDs provided in the request body.
@@ -220,4 +240,11 @@ func parseLimit(r *http.Request) int {
 		return n
 	}
 	return defaultLimit
+}
+
+func parseOlderThanDays(r *http.Request) int {
+	if n, err := strconv.Atoi(r.URL.Query().Get("older_than_days")); err == nil && n > 0 {
+		return n
+	}
+	return 15
 }

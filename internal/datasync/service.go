@@ -51,6 +51,101 @@ func (s *SyncService) SyncByIDs(ctx context.Context, mediaType string, ids []int
 	}, nil
 }
 
+// SyncMovieCatalog refreshes one cursor-paged chunk of movie metadata whose
+// updated_at is older than olderThanDays. It persists a fixed cutoff and cursor
+// so calls can resume safely while refreshed documents leave the stale set.
+func (s *SyncService) SyncMovieCatalog(ctx context.Context, olderThanDays, limit int, skipAcceptable, force bool) (*SyncResult, error) {
+	const syncKey = "sync_movie_catalog_stale"
+
+	meta, err := s.repo.GetSyncMeta(ctx, syncKey)
+	if err != nil && !isNotFound(err) {
+		return nil, err
+	}
+	metaMissing := isNotFound(err)
+	if metaMissing || meta.Status == StatusCompleted || force {
+		cutoff := time.Now().UTC().AddDate(0, 0, -olderThanDays)
+		total, err := s.repo.CountMovieIDsUpdatedBefore(ctx, cutoff)
+		if err != nil {
+			return nil, err
+		}
+		now := time.Now().UTC()
+		resetMeta := bson.M{
+			"after_id":        int64(0),
+			"processed":       0,
+			"total":           total,
+			"cutoff_unix":     cutoff.Unix(),
+			"older_than_days": olderThanDays,
+		}
+		if metaMissing {
+			meta = &SyncMeta{
+				SyncKey:   syncKey,
+				Source:    SourceCatalogStale,
+				MediaType: "movie",
+				Status:    StatusInProgress,
+				Meta:      resetMeta,
+				CreatedAt: now,
+				UpdatedAt: now,
+			}
+			if err := s.repo.CreateSyncMeta(ctx, *meta); err != nil {
+				return nil, err
+			}
+		} else if err := s.repo.UpdateSyncMeta(ctx, syncKey, resetMeta, StatusInProgress, nil); err != nil {
+			return nil, err
+		} else {
+			meta.Meta = resetMeta
+			meta.Status = StatusInProgress
+		}
+	}
+
+	afterID := toInt64(meta.Meta["after_id"])
+	processed := int(toInt64(meta.Meta["processed"]))
+	total := int(toInt64(meta.Meta["total"]))
+	cutoff := time.Unix(toInt64(meta.Meta["cutoff_unix"]), 0).UTC()
+
+	chunk, err := s.repo.GetMovieIDsUpdatedBefore(ctx, cutoff, afterID, limit)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.movieSync.Sync(ctx, chunk, skipAcceptable); err != nil {
+		return nil, err
+	}
+
+	if len(chunk) > 0 {
+		afterID = chunk[len(chunk)-1]
+		processed += len(chunk)
+	}
+	status := StatusInProgress
+	var syncDate *time.Time
+	if len(chunk) < limit || processed >= total {
+		status = StatusCompleted
+		now := time.Now().UTC()
+		syncDate = &now
+	}
+	metaUpdate := bson.M{
+		"after_id":        afterID,
+		"processed":       processed,
+		"total":           total,
+		"cutoff_unix":     cutoff.Unix(),
+		"older_than_days": toInt64(meta.Meta["older_than_days"]),
+	}
+	if err := s.repo.UpdateSyncMeta(ctx, syncKey, metaUpdate, status, syncDate); err != nil {
+		return nil, err
+	}
+
+	remaining := total - processed
+	if remaining < 0 {
+		remaining = 0
+	}
+	return &SyncResult{
+		SyncKey:   syncKey,
+		Source:    SourceCatalogStale,
+		Total:     total,
+		Processed: processed,
+		Remaining: remaining,
+		Status:    status,
+	}, nil
+}
+
 // SyncFromUserTracked syncs TMDB metadata for IDs in movie_user or tv_user using offset paging.
 // Loads the existing job by syncKey; creates a new one if not found yet.
 func (s *SyncService) SyncFromUserTracked(ctx context.Context, syncKey, mediaType, frequency string, limit int, skipAcceptable, force bool) (*SyncResult, error) {
