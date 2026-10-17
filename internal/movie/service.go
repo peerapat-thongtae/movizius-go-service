@@ -169,10 +169,9 @@ func (s *MovieService) GetByIDs(ctx context.Context, ids []int64) ([]MovieRespon
 	return s.enrichMovieIDs(ctx, ids)
 }
 
-// enrichMovieIDs fetches full TMDB detail for each id in parallel, then
-// overlays cached DB fields (the DB is the source of truth for the fields it
-// stores — popularity, vote_average/vote_count, and the stored catalog
-// fields). Shared by Discover and Recommendations.
+// enrichMovieIDs fetches full TMDB detail only for movies already present in
+// the local catalog, then overlays cached DB fields. The catalog is the gate
+// for every list returned by this service; TMDB only enriches those records.
 func (s *MovieService) enrichMovieIDs(ctx context.Context, ids []int64) ([]MovieResponse, error) {
 	// Load cached DB records so they can override TMDB detail. Read-only
 	// during the fan-out below.
@@ -180,12 +179,21 @@ func (s *MovieService) enrichMovieIDs(ctx context.Context, ids []int64) ([]Movie
 	if err != nil {
 		return nil, fmt.Errorf("movie service: fetch cached movies: %w", err)
 	}
+	knownIDs := make([]int64, 0, len(ids))
+	for _, id := range ids {
+		if _, ok := cached[id]; ok {
+			knownIDs = append(knownIDs, id)
+		}
+	}
+	if len(knownIDs) == 0 {
+		return []MovieResponse{}, nil
+	}
 
-	results := make([]MovieResponse, len(ids))
-	errs := make([]error, len(ids))
+	results := make([]MovieResponse, len(knownIDs))
+	errs := make([]error, len(knownIDs))
 
 	var wg sync.WaitGroup
-	for i, id := range ids {
+	for i, id := range knownIDs {
 		wg.Add(1)
 		go func(idx int, movieID int64) {
 			defer wg.Done()
@@ -426,7 +434,18 @@ func (s *MovieService) discoverRecommendationIDs(ctx context.Context, genreIDs [
 		if err != nil {
 			return nil, fmt.Errorf("movie service: discover recommendation page %d: %w", page, err)
 		}
+		candidateIDs := make([]int64, 0, len(discoverPage.Results))
 		for _, movie := range discoverPage.Results {
+			candidateIDs = append(candidateIDs, movie.ID)
+		}
+		cached, err := s.repo.FindByTMDBIDs(ctx, candidateIDs)
+		if err != nil {
+			return nil, fmt.Errorf("movie service: discover recommendation cached ids: %w", err)
+		}
+		for _, movie := range discoverPage.Results {
+			if _, known := cached[movie.ID]; !known {
+				continue
+			}
 			if _, watched := watchedSet[movie.ID]; watched {
 				continue
 			}
@@ -573,9 +592,6 @@ func (s *MovieService) reels(ctx context.Context, userID string, total int, rese
 		}
 	}
 
-	watchlistTarget := (total + 1) / 2
-	addIDs(watchlistIDs, watchlistTarget, false)
-
 	trendingPage, err := s.tmdb.GetTrending(ctx, "movie", randomTimeWindow, rand.Intn(reelsMaxPages)+1)
 	if err != nil {
 		return nil, fmt.Errorf("movie service: reels trending: %w", err)
@@ -585,8 +601,6 @@ func (s *MovieService) reels(ctx context.Context, userID string, total int, rese
 		trendingIDs = append(trendingIDs, movie.ID)
 	}
 	rand.Shuffle(len(trendingIDs), func(i, j int) { trendingIDs[i], trendingIDs[j] = trendingIDs[j], trendingIDs[i] })
-	trendingTarget := len(ids) + (total-len(ids)+1)/2
-	addIDs(trendingIDs, trendingTarget, true)
 
 	popularPage, err := s.tmdb.Discover(ctx, "movie", 0, rand.Intn(reelsMaxPages)+1)
 	if err != nil {
@@ -596,6 +610,31 @@ func (s *MovieService) reels(ctx context.Context, userID string, total int, rese
 	for _, movie := range popularPage.Results {
 		popularIDs = append(popularIDs, movie.ID)
 	}
+	allCandidateIDs := make([]int64, 0, len(watchlistIDs)+len(trendingIDs)+len(popularIDs))
+	allCandidateIDs = append(allCandidateIDs, watchlistIDs...)
+	allCandidateIDs = append(allCandidateIDs, trendingIDs...)
+	allCandidateIDs = append(allCandidateIDs, popularIDs...)
+	cached, err := s.repo.FindByTMDBIDs(ctx, allCandidateIDs)
+	if err != nil {
+		return nil, fmt.Errorf("movie service: reels cached ids: %w", err)
+	}
+	filterKnown := func(candidates []int64) []int64 {
+		filtered := make([]int64, 0, len(candidates))
+		for _, id := range candidates {
+			if _, known := cached[id]; known {
+				filtered = append(filtered, id)
+			}
+		}
+		return filtered
+	}
+	watchlistIDs = filterKnown(watchlistIDs)
+	trendingIDs = filterKnown(trendingIDs)
+	popularIDs = filterKnown(popularIDs)
+
+	watchlistTarget := (total + 1) / 2
+	addIDs(watchlistIDs, watchlistTarget, false)
+	trendingTarget := len(ids) + (total-len(ids)+1)/2
+	addIDs(trendingIDs, trendingTarget, true)
 	rand.Shuffle(len(popularIDs), func(i, j int) { popularIDs[i], popularIDs[j] = popularIDs[j], popularIDs[i] })
 	addIDs(popularIDs, total, true)
 
@@ -727,45 +766,13 @@ func (s *MovieService) Trending(ctx context.Context, timeWindow string, page int
 	for i, r := range trendingPage.Results {
 		ids[i] = r.ID
 	}
-
-	details := make([]MovieResponse, len(ids))
-	errs := make([]error, len(ids))
-	var wg sync.WaitGroup
-	for i, id := range ids {
-		wg.Add(1)
-		go func(idx int, movieID int64) {
-			defer wg.Done()
-			var detail MovieResponse
-			if err := s.tmdb.GetMovieDetail(ctx, movieID, appendToResponse, &detail); err != nil {
-				errs[idx] = fmt.Errorf("tmdb detail for id %d: %w", movieID, err)
-				return
-			}
-			detail.MediaType = "movie"
-			if detail.ImdbID == "" && detail.ExternalIDs != nil {
-				detail.ImdbID = detail.ExternalIDs.ImdbID
-			}
-			detail.ReleaseDateTH = extractReleaseDateTH(detail)
-			details[idx] = detail
-		}(i, id)
-	}
-	wg.Wait()
-
-	for _, err := range errs {
-		if err != nil {
-			return nil, fmt.Errorf("movie service: trending enrich from tmdb: %w", err)
-		}
-	}
-
-	cached, err := s.repo.FindByTMDBIDs(ctx, ids)
+	details, err := s.enrichMovieIDs(ctx, ids)
 	if err != nil {
-		return nil, fmt.Errorf("movie service: fetch cached movies: %w", err)
+		return nil, fmt.Errorf("movie service: trending enrich from tmdb: %w", err)
 	}
 
 	results := make([]MovieResponse, 0, len(details))
 	for _, detail := range details {
-		if db, ok := cached[detail.ID]; ok {
-			overlayDBFields(&detail, db)
-		}
 		if !isAcceptableMovie(detail) {
 			continue
 		}
@@ -780,13 +787,23 @@ func (s *MovieService) Trending(ctx context.Context, timeWindow string, page int
 	}, nil
 }
 
-// GetByID returns detail for a single movie. When the movie is cached in the DB,
+// GetByID returns detail for a single movie when it exists in the local catalog.
+// When the movie is cached in the DB,
 // the DB record is the source of truth for the fields it stores (popularity,
 // votes, release dates, status, runtime, title, poster, language) and TMDB
 // supplies the rest (overview, cast, videos, genre names, watch providers).
-// Movies absent from the DB fall back entirely to TMDB. Returns tmdb.ErrNotFound
-// if TMDB has no such movie.
+// Movies absent from the DB are not exposed. Returns tmdb.ErrNotFound if the
+// catalog or TMDB has no such movie.
 func (s *MovieService) GetByID(ctx context.Context, id int64) (*MovieResponse, error) {
+	cached, err := s.repo.FindByTMDBIDs(ctx, []int64{id})
+	if err != nil {
+		return nil, fmt.Errorf("movie service: fetch cached movie: %w", err)
+	}
+	db, ok := cached[id]
+	if !ok {
+		return nil, fmt.Errorf("movie service: get by id %d: %w", id, tmdb.ErrNotFound)
+	}
+
 	var detail MovieResponse
 	if err := s.tmdb.GetMovieDetail(ctx, id, detailAppendToResponse, &detail); err != nil {
 		return nil, fmt.Errorf("movie service: get by id %d: %w", id, err)
@@ -797,13 +814,7 @@ func (s *MovieService) GetByID(ctx context.Context, id int64) (*MovieResponse, e
 	}
 	detail.ReleaseDateTH = extractReleaseDateTH(detail)
 
-	cached, err := s.repo.FindByTMDBIDs(ctx, []int64{id})
-	if err != nil {
-		return nil, fmt.Errorf("movie service: fetch cached movie: %w", err)
-	}
-	if db, ok := cached[id]; ok {
-		overlayDBFields(&detail, db)
-	}
+	overlayDBFields(&detail, db)
 	return &detail, nil
 }
 

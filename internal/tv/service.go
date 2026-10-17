@@ -288,7 +288,18 @@ func (s *TVService) discoverRecommendationIDs(ctx context.Context, genreIDs []in
 		if err != nil {
 			return nil, fmt.Errorf("tv service: discover recommendation page %d: %w", page, err)
 		}
+		candidateIDs := make([]int64, 0, len(discoverPage.Results))
 		for _, show := range discoverPage.Results {
+			candidateIDs = append(candidateIDs, show.ID)
+		}
+		cached, err := s.repo.FindByTMDBIDs(ctx, candidateIDs)
+		if err != nil {
+			return nil, fmt.Errorf("tv service: discover recommendation cached ids: %w", err)
+		}
+		for _, show := range discoverPage.Results {
+			if _, known := cached[show.ID]; !known {
+				continue
+			}
 			if _, watched := watchedSet[show.ID]; watched {
 				continue
 			}
@@ -332,12 +343,21 @@ func (s *TVService) GetByIDs(ctx context.Context, ids []int64) ([]TVResponse, er
 	if err != nil {
 		return nil, fmt.Errorf("tv service: fetch cached tv: %w", err)
 	}
+	knownIDs := make([]int64, 0, len(ids))
+	for _, id := range ids {
+		if _, ok := cached[id]; ok {
+			knownIDs = append(knownIDs, id)
+		}
+	}
+	if len(knownIDs) == 0 {
+		return []TVResponse{}, nil
+	}
 
-	results := make([]TVResponse, len(ids))
-	errs := make([]error, len(ids))
+	results := make([]TVResponse, len(knownIDs))
+	errs := make([]error, len(knownIDs))
 
 	var wg sync.WaitGroup
-	for i, id := range ids {
+	for i, id := range knownIDs {
 		wg.Add(1)
 		go func(idx int, tvID int64) {
 			defer wg.Done()
@@ -366,7 +386,7 @@ func (s *TVService) GetByIDs(ctx context.Context, ids []int64) ([]TVResponse, er
 
 	// Override next_episode_to_air.air_date with the DB value which has the
 	// correct timezone (set by TVMaze sync), unlike TMDB which returns date-only.
-	airDates, err := s.repo.GetNextEpisodeAirDatesByIDs(ctx, ids)
+	airDates, err := s.repo.GetNextEpisodeAirDatesByIDs(ctx, knownIDs)
 	if err != nil {
 		return nil, fmt.Errorf("tv service: get air dates from db: %w", err)
 	}
@@ -530,52 +550,13 @@ func (s *TVService) Trending(ctx context.Context, timeWindow string, page int) (
 	for i, r := range trendingPage.Results {
 		ids[i] = r.ID
 	}
-
-	details := make([]TVResponse, len(ids))
-	errs := make([]error, len(ids))
-	var wg sync.WaitGroup
-	for i, id := range ids {
-		wg.Add(1)
-		go func(idx int, tvID int64) {
-			defer wg.Done()
-			var detail TVResponse
-			if err := s.tmdb.GetTVDetail(ctx, tvID, appendToResponse, &detail); err != nil {
-				errs[idx] = fmt.Errorf("tmdb detail for id %d: %w", tvID, err)
-				return
-			}
-			detail.MediaType = "tv"
-			if detail.ImdbID == "" && detail.ExternalIDs != nil {
-				detail.ImdbID = detail.ExternalIDs.ImdbID
-			}
-			details[idx] = detail
-		}(i, id)
-	}
-	wg.Wait()
-
-	for _, err := range errs {
-		if err != nil {
-			return nil, fmt.Errorf("tv service: trending enrich from tmdb: %w", err)
-		}
-	}
-
-	cached, err := s.repo.FindByTMDBIDs(ctx, ids)
+	details, err := s.GetByIDs(ctx, ids)
 	if err != nil {
-		return nil, fmt.Errorf("tv service: fetch cached tv: %w", err)
-	}
-
-	airDates, err := s.repo.GetNextEpisodeAirDatesByIDs(ctx, ids)
-	if err != nil {
-		return nil, fmt.Errorf("tv service: get air dates from db: %w", err)
+		return nil, fmt.Errorf("tv service: trending enrich from tmdb: %w", err)
 	}
 
 	results := make([]TVResponse, 0, len(details))
 	for _, detail := range details {
-		if db, ok := cached[detail.ID]; ok {
-			overlayDBFields(&detail, db)
-		}
-		if airDate, ok := airDates[detail.ID]; ok && detail.NextEpisodeToAir != nil {
-			detail.NextEpisodeToAir.AirDate = FlexAirDate(airDate)
-		}
 		if !isAcceptableTV(detail) {
 			continue
 		}
@@ -590,13 +571,23 @@ func (s *TVService) Trending(ctx context.Context, timeWindow string, page int) (
 	}, nil
 }
 
-// GetByID returns detail for a single TV series. When the series is cached in the
+// GetByID returns detail for a single TV series when it exists in the local
+// catalog. When the series is cached in the
 // DB, the DB record is the source of truth for the fields it stores (popularity,
 // votes, air dates, status, type, season/episode counts, is_anime, name, poster,
 // language) plus next_episode_to_air.air_date; TMDB supplies the rest (overview,
-// credits, videos, genre names, watch providers). Series absent from the DB fall
-// back entirely to TMDB. Returns tmdb.ErrNotFound if TMDB has no such series.
+// credits, videos, genre names, watch providers). Series absent from the DB are
+// not exposed. Returns tmdb.ErrNotFound if the catalog or TMDB has no such series.
 func (s *TVService) GetByID(ctx context.Context, id int64) (*TVResponse, error) {
+	cached, err := s.repo.FindByTMDBIDs(ctx, []int64{id})
+	if err != nil {
+		return nil, fmt.Errorf("tv service: fetch cached tv: %w", err)
+	}
+	db, ok := cached[id]
+	if !ok {
+		return nil, fmt.Errorf("tv service: get by id %d: %w", id, tmdb.ErrNotFound)
+	}
+
 	var detail TVResponse
 	if err := s.tmdb.GetTVDetail(ctx, id, detailAppendToResponse, &detail); err != nil {
 		return nil, fmt.Errorf("tv service: get by id %d: %w", id, err)
@@ -606,13 +597,7 @@ func (s *TVService) GetByID(ctx context.Context, id int64) (*TVResponse, error) 
 		detail.ImdbID = detail.ExternalIDs.ImdbID
 	}
 
-	cached, err := s.repo.FindByTMDBIDs(ctx, []int64{id})
-	if err != nil {
-		return nil, fmt.Errorf("tv service: fetch cached tv: %w", err)
-	}
-	if db, ok := cached[id]; ok {
-		overlayDBFields(&detail, db)
-	}
+	overlayDBFields(&detail, db)
 
 	airDates, err := s.repo.GetNextEpisodeAirDatesByIDs(ctx, []int64{id})
 	if err != nil {
@@ -631,6 +616,14 @@ func (s *TVService) GetByID(ctx context.Context, id int64) (*TVResponse, error) 
 // episode_watched array from GetStates and can compute per-episode watched state
 // without a second round-trip or duplicating that logic server-side.
 func (s *TVService) GetSeason(ctx context.Context, tvID int64, seasonNumber int) (*SeasonDetailResponse, error) {
+	cached, err := s.repo.FindByTMDBIDs(ctx, []int64{tvID})
+	if err != nil {
+		return nil, fmt.Errorf("tv service: fetch cached tv for season: %w", err)
+	}
+	if _, ok := cached[tvID]; !ok {
+		return nil, fmt.Errorf("tv service: get season %d for tv %d: %w", seasonNumber, tvID, tmdb.ErrNotFound)
+	}
+
 	var tmdbSeason struct {
 		ID           int64   `json:"id"`
 		Name         string  `json:"name"`
