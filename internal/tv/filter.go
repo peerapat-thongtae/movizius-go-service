@@ -14,7 +14,7 @@ var unwantedGenreIDs = map[int64]bool{
 }
 
 var earlyStageStatuses = map[string]bool{
-	"Planned":     true,
+	"Planned":       true,
 	"In Production": true,
 }
 

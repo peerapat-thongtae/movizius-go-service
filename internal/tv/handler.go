@@ -30,6 +30,8 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux, auth func(http.Handler) htt
 	mux.Handle("POST /tv", auth(http.HandlerFunc(h.UpsertState)))
 	mux.Handle("POST /tv/episodes", auth(http.HandlerFunc(h.UpsertEpisodes)))
 	mux.Handle("GET /tv/states", auth(http.HandlerFunc(h.GetStates)))
+	mux.Handle("GET /tv/upcoming-episodes", auth(http.HandlerFunc(h.UpcomingEpisodes)))
+	mux.Handle("GET /tv/watchlist/now-airing", auth(http.HandlerFunc(h.NowAiringWatchlist)))
 	mux.Handle("GET /tv/discover", auth(http.HandlerFunc(h.Discover)))
 	mux.Handle("GET /tv/recommendations/random", auth(http.HandlerFunc(h.RandomRecommendations)))
 	mux.Handle("GET /tv/recommendations", auth(http.HandlerFunc(h.Recommendations)))
@@ -497,6 +499,62 @@ func (h *Handler) GetStates(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		h.log.Error("failed to fetch tv states", "error", err, "user", userID, "path", r.URL.Path)
 		response.Error(w, http.StatusInternalServerError, "failed to fetch tv states")
+		return
+	}
+
+	response.Paginated(w, http.StatusOK, states, 1, 1)
+}
+
+// UpcomingEpisodes returns watchlisted or caught-up TV series with a known next air date.
+//
+//	@Summary		Upcoming episodes from the user's watchlist
+//	@Description	Returns the authenticated user's watchlisted or caught-up TV series that have a scheduled next episode, ordered by air date.
+//	@Tags			TV
+//	@Produce		json
+//	@Security		BearerAuth
+//	@Success		200	{object}	response.Page[tv.TVStateResponse]
+//	@Failure		401	{object}	map[string]string
+//	@Failure		500	{object}	map[string]string
+//	@Router			/tv/upcoming-episodes [get]
+func (h *Handler) UpcomingEpisodes(w http.ResponseWriter, r *http.Request) {
+	userID, ok := middleware.UserIDFromContext(r.Context())
+	if !ok {
+		response.Error(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
+	states, err := h.service.UpcomingEpisodes(r.Context(), userID)
+	if err != nil {
+		h.log.Error("failed to fetch upcoming tv episodes", "error", err, "user", userID, "path", r.URL.Path)
+		response.Error(w, http.StatusInternalServerError, "failed to fetch upcoming tv episodes")
+		return
+	}
+
+	response.Paginated(w, http.StatusOK, states, 1, 1)
+}
+
+// NowAiringWatchlist returns watchlisted series that have moved beyond their premiere.
+//
+//	@Summary		Now airing series from the user's watchlist
+//	@Description	Returns watchlisted returning series with more than their first episode already aired.
+//	@Tags			TV
+//	@Produce		json
+//	@Security		BearerAuth
+//	@Success		200	{object}	response.Page[tv.TVStateResponse]
+//	@Failure		401	{object}	map[string]string
+//	@Failure		500	{object}	map[string]string
+//	@Router			/tv/watchlist/now-airing [get]
+func (h *Handler) NowAiringWatchlist(w http.ResponseWriter, r *http.Request) {
+	userID, ok := middleware.UserIDFromContext(r.Context())
+	if !ok {
+		response.Error(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
+	states, err := h.service.NowAiringWatchlist(r.Context(), userID)
+	if err != nil {
+		h.log.Error("failed to fetch now airing watchlist tv", "error", err, "user", userID, "path", r.URL.Path)
+		response.Error(w, http.StatusInternalServerError, "failed to fetch now airing watchlist tv")
 		return
 	}
 

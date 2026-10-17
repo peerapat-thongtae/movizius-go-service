@@ -159,16 +159,16 @@ func (h *Handler) SyncTVMazeSchedule(w http.ResponseWriter, r *http.Request) {
 }
 
 // PruneUnacceptableMovie deletes movie documents that fail the acceptability filter and are not
-// tracked by any user. With ?dryRun=true it only returns the ids that would be deleted.
+// tracked by any user. With ?dryRun=true it only returns the candidates that would be deleted.
 func (h *Handler) PruneUnacceptableMovie(w http.ResponseWriter, r *http.Request) {
 	dryRun := parseDryRun(r)
-	ids, err := h.service.PruneUnacceptableMovie(r.Context(), dryRun)
+	candidates, err := h.service.PruneUnacceptableMovie(r.Context(), dryRun)
 	if err != nil {
 		h.log.Error("sync operation failed", "error", err, "path", r.URL.Path)
 		response.Error(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	response.Success(w, http.StatusOK, map[string]any{"dry_run": dryRun, "count": len(ids), "ids": ids})
+	response.Success(w, http.StatusOK, map[string]any{"dry_run": dryRun, "count": len(candidates), "movies": candidates})
 }
 
 // PruneUnacceptableTV deletes tv documents that fail the acceptability filter and are not tracked by

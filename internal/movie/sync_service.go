@@ -21,16 +21,21 @@ func NewSyncService(repo MovieRepository, tmdb *tmdb.Client) *MovieSyncService {
 }
 
 // PruneUnacceptableUntracked deletes movie documents that fail the acceptability filter and are not
-// tracked by any user. When dryRun is true it returns the candidate ids without deleting them.
-func (s *MovieSyncService) PruneUnacceptableUntracked(ctx context.Context, dryRun bool) ([]int64, error) {
+// tracked by any user. When dryRun is true it returns the candidates without deleting them.
+func (s *MovieSyncService) PruneUnacceptableUntracked(ctx context.Context, dryRun bool) ([]PruneCandidate, error) {
 	return s.repo.PruneUnacceptableUntracked(ctx, dryRun)
 }
 
 // Sync fetches TMDB detail for each ID in parallel and upserts into the movie collection.
-// When skipAcceptable is true, the acceptability filter is bypassed.
+// When skipAcceptable is true, the acceptability filter is bypassed. User-tracked movies
+// bypass it as well, so their cached metadata remains available regardless of catalog quality.
 func (s *MovieSyncService) Sync(ctx context.Context, ids []int64, skipAcceptable bool) error {
 	if len(ids) == 0 {
 		return nil
+	}
+	trackedIDs, err := s.repo.FindTrackedIDs(ctx, ids)
+	if err != nil {
+		return fmt.Errorf("movie sync: find tracked ids: %w", err)
 	}
 
 	errs := make([]error, len(ids))
@@ -52,7 +57,8 @@ func (s *MovieSyncService) Sync(ctx context.Context, ids []int64, skipAcceptable
 			if detail.ImdbID == "" && detail.ExternalIDs != nil {
 				detail.ImdbID = detail.ExternalIDs.ImdbID
 			}
-			if !skipAcceptable && !isAcceptableMovie(detail) {
+			_, isTracked := trackedIDs[movieID]
+			if !skipAcceptable && !isTracked && !isAcceptableMovie(detail) {
 				return
 			}
 			if err := s.repo.UpsertDetail(ctx, detail); err != nil {

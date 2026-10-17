@@ -19,6 +19,7 @@ import (
 type TVRepository interface {
 	GetStatesByUserID(ctx context.Context, userID string) ([]TVStateResponse, error)
 	FindByTMDBIDs(ctx context.Context, ids []int64) (map[int64]TV, error)
+	FindTrackedIDs(ctx context.Context, ids []int64) (map[int64]struct{}, error)
 	SearchIDs(ctx context.Context, query string, page int) (ids []int64, total int, err error)
 	DiscoverIDs(ctx context.Context, userID string, q DiscoverQuery) (ids []int64, total int, err error)
 	UpsertTVState(ctx context.Context, userID string, tvID int64, episodes []EpisodeWatched, rating *float64) error
@@ -78,6 +79,28 @@ func (r *mongoTVRepository) FindByTMDBIDs(ctx context.Context, ids []int64) (map
 		result[t.TVID] = t
 	}
 	return result, cursor.Err()
+}
+
+// FindTrackedIDs returns the requested IDs that appear in at least one user's TV list.
+func (r *mongoTVRepository) FindTrackedIDs(ctx context.Context, ids []int64) (map[int64]struct{}, error) {
+	tracked := make(map[int64]struct{})
+	if len(ids) == 0 {
+		return tracked, nil
+	}
+
+	values, err := r.db.Collection("tv_user").Distinct(ctx, "id", bson.M{"id": bson.M{"$in": ids}})
+	if err != nil {
+		return nil, fmt.Errorf("tv: find tracked ids: %w", err)
+	}
+	for _, value := range values {
+		switch id := value.(type) {
+		case int64:
+			tracked[id] = struct{}{}
+		case int32:
+			tracked[int64(id)] = struct{}{}
+		}
+	}
+	return tracked, nil
 }
 
 // SearchIDs ranks local name matches as exact, prefix, then contains matches.
@@ -1129,6 +1152,8 @@ func buildStatesPipeline(userID string) bson.A {
 			{Key: "id", Value: 1},
 			{Key: "user_id", Value: 1},
 			{Key: "name", Value: "$tv.name"},
+			{Key: "backdrop_path", Value: "$tv.backdrop_path"},
+			{Key: "poster_path", Value: "$tv.poster_path"},
 			{Key: "media_type", Value: "tv"},
 			{Key: "is_anime", Value: "$tv.is_anime"},
 			{Key: "vote_average", Value: "$tv.vote_average"},
@@ -1140,6 +1165,7 @@ func buildStatesPipeline(userID string) bson.A {
 			{Key: "watchlisted_at", Value: 1},
 			{Key: "count_watched", Value: 1},
 			{Key: "account_status", Value: 1},
+			{Key: "tv_status", Value: "$tv.status"},
 			{Key: "latest_state", Value: 1},
 			{Key: "max_watched_ep", Value: 1},
 			{Key: "next_episode_to_air", Value: "$tv.next_episode_to_air"},

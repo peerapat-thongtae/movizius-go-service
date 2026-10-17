@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"sort"
 	"strings"
 	"time"
 
@@ -19,13 +20,14 @@ import (
 type MovieRepository interface {
 	FindByUserID(ctx context.Context, userID string) ([]MovieUser, error)
 	FindByTMDBIDs(ctx context.Context, ids []int64) (map[int64]Movie, error)
+	FindTrackedIDs(ctx context.Context, ids []int64) (map[int64]struct{}, error)
 	SearchIDs(ctx context.Context, query string, page int) (ids []int64, total int, err error)
 	DiscoverIDs(ctx context.Context, userID string, q DiscoverQuery) (ids []int64, total int, err error)
 	UpsertState(ctx context.Context, userID string, req UpsertStateRequest) error
 	UpsertDetail(ctx context.Context, data MovieResponse) error
 	DeleteByTMDBID(ctx context.Context, id int64) error
 	ReconcilePopularity(ctx context.Context, export map[int64]float64, maxDeleteRatio float64) (ReconcileResult, error)
-	PruneUnacceptableUntracked(ctx context.Context, dryRun bool) ([]int64, error)
+	PruneUnacceptableUntracked(ctx context.Context, dryRun bool) ([]PruneCandidate, error)
 	// FindOne returns a single user's tracking doc for a movie, or (nil, nil) if none exists.
 	FindOne(ctx context.Context, userID string, movieID int64) (*MovieUser, error)
 	// UpdateProfileContribution persists the recommendation-profile snapshot for a user's movie doc.
@@ -48,6 +50,14 @@ type RecommendationCriteria struct {
 	DirectorIDs   []int64
 	CollectionIDs []int64
 	CompanyIDs    []int64
+}
+
+// PruneCandidate is a catalog movie selected by the unacceptable-data cleanup.
+// Candidates are ordered by popularity descending for dry-run review.
+type PruneCandidate struct {
+	ID         int64   `json:"id"`
+	Title      string  `json:"title"`
+	Popularity float64 `json:"popularity"`
 }
 
 // empty reports whether every bucket in the criteria is empty.
@@ -97,6 +107,28 @@ func (r *mongoMovieRepository) FindByTMDBIDs(ctx context.Context, ids []int64) (
 		result[m.MovieID] = m
 	}
 	return result, cursor.Err()
+}
+
+// FindTrackedIDs returns the requested IDs that appear in at least one user's movie list.
+func (r *mongoMovieRepository) FindTrackedIDs(ctx context.Context, ids []int64) (map[int64]struct{}, error) {
+	tracked := make(map[int64]struct{})
+	if len(ids) == 0 {
+		return tracked, nil
+	}
+
+	values, err := r.db.Collection("movie_user").Distinct(ctx, "id", bson.M{"id": bson.M{"$in": ids}})
+	if err != nil {
+		return nil, fmt.Errorf("movie: find tracked ids: %w", err)
+	}
+	for _, value := range values {
+		switch id := value.(type) {
+		case int64:
+			tracked[id] = struct{}{}
+		case int32:
+			tracked[int64(id)] = struct{}{}
+		}
+	}
+	return tracked, nil
 }
 
 // SearchIDs ranks local title matches as exact, prefix, then contains matches.
@@ -304,9 +336,9 @@ func (r *mongoMovieRepository) DeleteByTMDBID(ctx context.Context, id int64) err
 }
 
 // PruneUnacceptableUntracked deletes movie documents that fail the acceptability filter and are not
-// tracked by any user (absent from movie_user). It returns the ids that were deleted; when dryRun is
-// true it returns the same set of candidate ids without deleting anything.
-func (r *mongoMovieRepository) PruneUnacceptableUntracked(ctx context.Context, dryRun bool) ([]int64, error) {
+// tracked by any user (absent from movie_user). It returns the selected movies; when dryRun is
+// true it returns the same candidates without deleting anything.
+func (r *mongoMovieRepository) PruneUnacceptableUntracked(ctx context.Context, dryRun bool) ([]PruneCandidate, error) {
 	trackedRaw, err := r.db.Collection("movie_user").Distinct(ctx, "id", bson.M{})
 	if err != nil {
 		return nil, fmt.Errorf("movie: prune distinct tracked ids: %w", err)
@@ -321,14 +353,14 @@ func (r *mongoMovieRepository) PruneUnacceptableUntracked(ctx context.Context, d
 		}
 	}
 
-	projection := bson.M{"_id": 0, "id": 1, "popularity": 1, "genres": 1, "original_language": 1, "status": 1}
+	projection := bson.M{"_id": 0, "id": 1, "title": 1, "popularity": 1, "vote_count": 1, "poster_path": 1, "genres": 1, "original_language": 1, "status": 1}
 	cursor, err := r.db.Collection("movie").Find(ctx, bson.M{}, options.Find().SetProjection(projection))
 	if err != nil {
 		return nil, fmt.Errorf("movie: prune find: %w", err)
 	}
 	defer cursor.Close(ctx)
 
-	var toDelete []int64
+	var candidates []PruneCandidate
 	for cursor.Next(ctx) {
 		var m Movie
 		if err := cursor.Decode(&m); err != nil {
@@ -338,15 +370,30 @@ func (r *mongoMovieRepository) PruneUnacceptableUntracked(ctx context.Context, d
 			continue
 		}
 		if !isAcceptableMovieDoc(m) {
-			toDelete = append(toDelete, m.MovieID)
+			var popularity float64
+			if m.Popularity != nil {
+				popularity = *m.Popularity
+			}
+			candidates = append(candidates, PruneCandidate{ID: m.MovieID, Title: m.Title, Popularity: popularity})
 		}
 	}
 	if err := cursor.Err(); err != nil {
 		return nil, fmt.Errorf("movie: prune cursor: %w", err)
 	}
 
+	sort.Slice(candidates, func(i, j int) bool {
+		if candidates[i].Popularity != candidates[j].Popularity {
+			return candidates[i].Popularity > candidates[j].Popularity
+		}
+		return candidates[i].ID < candidates[j].ID
+	})
 	if dryRun {
-		return toDelete, nil
+		return candidates, nil
+	}
+
+	toDelete := make([]int64, len(candidates))
+	for i, candidate := range candidates {
+		toDelete[i] = candidate.ID
 	}
 
 	for start := 0; start < len(toDelete); start += reconcileDeleteBatch {
@@ -363,7 +410,7 @@ func (r *mongoMovieRepository) PruneUnacceptableUntracked(ctx context.Context, d
 		}
 	}
 
-	return toDelete, nil
+	return candidates, nil
 }
 
 // reconcileUpdateBatch is the number of popularity updates flushed per BulkWrite.

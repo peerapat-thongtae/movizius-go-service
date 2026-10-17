@@ -32,10 +32,15 @@ func (s *TVSyncService) PruneUnacceptableUntracked(ctx context.Context, dryRun b
 }
 
 // Sync fetches TMDB detail for each ID in parallel and upserts into the tv collection.
-// When skipAcceptable is true, the acceptability filter is bypassed.
+// When skipAcceptable is true, the acceptability filter is bypassed. User-tracked series
+// bypass it as well, so their cached metadata remains available regardless of catalog quality.
 func (s *TVSyncService) Sync(ctx context.Context, ids []int64, skipAcceptable bool) error {
 	if len(ids) == 0 {
 		return nil
+	}
+	trackedIDs, err := s.repo.FindTrackedIDs(ctx, ids)
+	if err != nil {
+		return fmt.Errorf("tv sync: find tracked ids: %w", err)
 	}
 
 	errs := make([]error, len(ids))
@@ -57,7 +62,8 @@ func (s *TVSyncService) Sync(ctx context.Context, ids []int64, skipAcceptable bo
 			if detail.ImdbID == "" && detail.ExternalIDs != nil {
 				detail.ImdbID = detail.ExternalIDs.ImdbID
 			}
-			if !skipAcceptable && !isAcceptableTV(detail) {
+			_, isTracked := trackedIDs[tvID]
+			if !skipAcceptable && !isTracked && !isAcceptableTV(detail) {
 				return
 			}
 			if err := s.repo.UpsertDetail(ctx, detail); err != nil {

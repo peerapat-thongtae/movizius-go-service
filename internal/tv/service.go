@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math/rand"
+	"sort"
 	"sync"
 	"time"
 
@@ -36,6 +37,7 @@ const recommendationCandidateLimit = 300
 // Hero is a fixed curated rail rather than a paginated browsing surface.
 const heroResultLimit = 20
 const heroMaxPages = 25
+const waitingNextEpisodeResultLimit = 20
 
 type TVAffinity struct {
 	Genres              map[int64]int
@@ -890,4 +892,115 @@ func (s *TVService) GetStates(ctx context.Context, userID string) ([]TVStateResp
 		return nil, fmt.Errorf("tv service: get states: %w", err)
 	}
 	return states, nil
+}
+
+// UpcomingEpisodes returns watchlisted or caught-up TV series whose next
+// episode has a known future air date. It is a dedicated home-rail payload,
+// so clients do not need to combine discover and states responses.
+func (s *TVService) UpcomingEpisodes(ctx context.Context, userID string) ([]TVStateResponse, error) {
+	states, err := s.repo.GetStatesByUserID(ctx, userID)
+	if err != nil {
+		return nil, fmt.Errorf("tv service: get upcoming episode states: %w", err)
+	}
+
+	results := make([]TVStateResponse, 0, len(states))
+	for _, state := range states {
+		if (state.AccountStatus != "waiting_next_ep" && state.AccountStatus != "watchlist") || state.NextEpisodeToAir == nil || string(state.NextEpisodeToAir.AirDate) == "" {
+			continue
+		}
+		// A watchlist entry has not been started yet, so only surface a true
+		// series premiere. Caught-up series can wait for any later episode.
+		if state.AccountStatus == "watchlist" && (state.NextEpisodeToAir.SeasonNumber != 1 || state.NextEpisodeToAir.EpisodeNumber != 1) {
+			continue
+		}
+		results = append(results, state)
+	}
+
+	sort.SliceStable(results, func(i, j int) bool {
+		return string(results[i].NextEpisodeToAir.AirDate) < string(results[j].NextEpisodeToAir.AirDate)
+	})
+	if len(results) > waitingNextEpisodeResultLimit {
+		results = results[:waitingNextEpisodeResultLimit]
+	}
+
+	ids := make([]int64, len(results))
+	for i, state := range results {
+		ids[i] = state.TVID
+	}
+	details, err := s.GetByIDs(ctx, ids)
+	if err != nil {
+		return nil, fmt.Errorf("tv service: enrich upcoming episodes: %w", err)
+	}
+	detailByID := make(map[int64]TVResponse, len(details))
+	for _, detail := range details {
+		detailByID[detail.ID] = detail
+	}
+	for i := range results {
+		if detail, ok := detailByID[results[i].TVID]; ok {
+			results[i].Name = detail.Name
+			results[i].BackdropPath = detail.BackdropPath
+			results[i].PosterPath = detail.PosterPath
+		}
+	}
+
+	return results, nil
+}
+
+// NowAiringWatchlist returns series the user saved before starting, once more
+// than the premiere has aired.
+func (s *TVService) NowAiringWatchlist(ctx context.Context, userID string) ([]TVStateResponse, error) {
+	states, err := s.repo.GetStatesByUserID(ctx, userID)
+	if err != nil {
+		return nil, fmt.Errorf("tv service: get now airing watchlist states: %w", err)
+	}
+
+	today := time.Now().Format("2006-01-02")
+	results := make([]TVStateResponse, 0, len(states))
+	for _, state := range states {
+		last := state.LastEpisodeToAir
+		if state.AccountStatus != "watchlist" || state.TVStatus != "Returning Series" || last == nil || string(last.AirDate) == "" || string(last.AirDate) > today {
+			continue
+		}
+		if last.SeasonNumber == 1 && last.EpisodeNumber <= 1 {
+			continue
+		}
+		results = append(results, state)
+	}
+
+	sort.SliceStable(results, func(i, j int) bool {
+		leftHasNext := results[i].NextEpisodeToAir != nil && string(results[i].NextEpisodeToAir.AirDate) != ""
+		rightHasNext := results[j].NextEpisodeToAir != nil && string(results[j].NextEpisodeToAir.AirDate) != ""
+		if leftHasNext != rightHasNext {
+			return leftHasNext
+		}
+		if leftHasNext {
+			return string(results[i].NextEpisodeToAir.AirDate) < string(results[j].NextEpisodeToAir.AirDate)
+		}
+		return string(results[i].LastEpisodeToAir.AirDate) > string(results[j].LastEpisodeToAir.AirDate)
+	})
+	if len(results) > waitingNextEpisodeResultLimit {
+		results = results[:waitingNextEpisodeResultLimit]
+	}
+
+	ids := make([]int64, len(results))
+	for i, state := range results {
+		ids[i] = state.TVID
+	}
+	details, err := s.GetByIDs(ctx, ids)
+	if err != nil {
+		return nil, fmt.Errorf("tv service: enrich now airing watchlist: %w", err)
+	}
+	detailByID := make(map[int64]TVResponse, len(details))
+	for _, detail := range details {
+		detailByID[detail.ID] = detail
+	}
+	for i := range results {
+		if detail, ok := detailByID[results[i].TVID]; ok {
+			results[i].Name = detail.Name
+			results[i].BackdropPath = detail.BackdropPath
+			results[i].PosterPath = detail.PosterPath
+		}
+	}
+
+	return results, nil
 }

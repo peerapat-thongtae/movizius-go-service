@@ -169,6 +169,8 @@ type TVStateResponse struct {
 	TVID             int64            `bson:"id"                  json:"id"`
 	UserID           string           `bson:"user_id"             json:"user_id"`
 	Name             string           `bson:"name"                json:"name"`
+	BackdropPath     string           `bson:"backdrop_path"       json:"backdrop_path"`
+	PosterPath       string           `bson:"poster_path"         json:"poster_path"`
 	MediaType        string           `bson:"media_type"          json:"media_type"`
 	IsAnime          bool             `bson:"is_anime"            json:"is_anime"`
 	VoteAverage      float64          `bson:"vote_average"        json:"vote_average"`
@@ -180,6 +182,7 @@ type TVStateResponse struct {
 	WatchlistedAt    time.Time        `bson:"watchlisted_at"      json:"watchlisted_at"`
 	CountWatched     int              `bson:"count_watched"       json:"count_watched"`
 	AccountStatus    string           `bson:"account_status"      json:"account_status"`
+	TVStatus         string           `bson:"tv_status"           json:"-"`
 	LatestState      *time.Time       `bson:"latest_state"        json:"latest_state,omitempty"`
 	MaxWatchedEp     *EpisodeWatched  `bson:"max_watched_ep"      json:"max_watched_ep,omitempty"`
 	NextEpisodeToAir *StateEpisode    `bson:"next_episode_to_air" json:"next_episode_to_air"`

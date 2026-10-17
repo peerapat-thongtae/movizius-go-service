@@ -541,8 +541,8 @@ func (s *SyncService) SyncTVMazeSchedule(ctx context.Context) (*SyncResult, erro
 }
 
 // PruneUnacceptableMovie deletes movie documents that fail the acceptability filter and are not
-// tracked in movie_user. When dryRun is true it returns the ids that would be deleted without deleting.
-func (s *SyncService) PruneUnacceptableMovie(ctx context.Context, dryRun bool) ([]int64, error) {
+// tracked in movie_user. When dryRun is true it returns the candidates that would be deleted without deleting.
+func (s *SyncService) PruneUnacceptableMovie(ctx context.Context, dryRun bool) ([]movie.PruneCandidate, error) {
 	return s.movieSync.PruneUnacceptableUntracked(ctx, dryRun)
 }
 
