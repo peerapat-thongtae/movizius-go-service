@@ -37,6 +37,7 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux, auth func(http.Handler) htt
 	mux.Handle("GET /movie/reels", auth(http.HandlerFunc(h.Reels)))
 	mux.Handle("GET /movie/hero", auth(http.HandlerFunc(h.Hero)))
 	mux.Handle("GET /movie/trending", auth(http.HandlerFunc(h.Trending)))
+	mux.Handle("GET /movie/{id}/collection", auth(http.HandlerFunc(h.Collection)))
 	mux.Handle("GET /movie/{id}", auth(http.HandlerFunc(h.GetByID)))
 }
 
@@ -335,6 +336,30 @@ func (h *Handler) Hero(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	response.Success(w, http.StatusOK, results)
+}
+
+// Collection returns the local-catalog movies in the collection containing a movie.
+func (h *Handler) Collection(w http.ResponseWriter, r *http.Request) {
+	if _, ok := middleware.UserIDFromContext(r.Context()); !ok {
+		response.Error(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil || id < 1 {
+		response.Error(w, http.StatusBadRequest, "invalid movie id")
+		return
+	}
+	result, err := h.service.Collection(r.Context(), id)
+	if err != nil {
+		if errors.Is(err, tmdb.ErrNotFound) {
+			response.Error(w, http.StatusNotFound, "movie or collection not found")
+			return
+		}
+		h.log.Error("failed to fetch movie collection", "error", err, "path", r.URL.Path)
+		response.Error(w, http.StatusInternalServerError, "failed to fetch movie collection")
+		return
+	}
+	response.Success(w, http.StatusOK, result)
 }
 
 // GetByID returns full TMDB detail for a single movie.

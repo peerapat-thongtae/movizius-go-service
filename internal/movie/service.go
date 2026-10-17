@@ -851,6 +851,57 @@ func (s *MovieService) Hero(ctx context.Context, userID string) ([]MovieResponse
 	return results, nil
 }
 
+// Collection returns the local-catalog parts of the collection that contains
+// movieID. The collection itself comes from TMDB, while every returned part is
+// gated through the local movie catalog before being enriched.
+func (s *MovieService) Collection(ctx context.Context, movieID int64) (*CollectionDetailResponse, error) {
+	movie, err := s.GetByID(ctx, movieID)
+	if err != nil {
+		return nil, err
+	}
+	if movie.BelongsToCollection == nil {
+		return nil, nil
+	}
+
+	var collection struct {
+		ID           int64  `json:"id"`
+		Name         string `json:"name"`
+		Overview     string `json:"overview"`
+		PosterPath   string `json:"poster_path"`
+		BackdropPath string `json:"backdrop_path"`
+		Parts        []struct {
+			ID int64 `json:"id"`
+		} `json:"parts"`
+	}
+	if err := s.tmdb.GetCollection(ctx, movie.BelongsToCollection.ID, &collection); err != nil {
+		return nil, fmt.Errorf("movie service: get collection %d: %w", movie.BelongsToCollection.ID, err)
+	}
+
+	ids := make([]int64, 0, len(collection.Parts))
+	for _, part := range collection.Parts {
+		ids = append(ids, part.ID)
+	}
+	parts, err := s.enrichMovieIDs(ctx, ids)
+	if err != nil {
+		return nil, fmt.Errorf("movie service: enrich collection %d: %w", collection.ID, err)
+	}
+	filtered := make([]MovieResponse, 0, len(parts))
+	for _, part := range parts {
+		if isAcceptableMovie(part) {
+			filtered = append(filtered, part)
+		}
+	}
+
+	return &CollectionDetailResponse{
+		ID:           collection.ID,
+		Name:         collection.Name,
+		Overview:     collection.Overview,
+		PosterPath:   collection.PosterPath,
+		BackdropPath: collection.BackdropPath,
+		Parts:        filtered,
+	}, nil
+}
+
 // GetByID returns detail for a single movie when it exists in the local catalog.
 // When the movie is cached in the DB,
 // the DB record is the source of truth for the fields it stores (popularity,

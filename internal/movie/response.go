@@ -95,6 +95,17 @@ type Collection struct {
 	BackdropPath string `bson:"backdrop_path" json:"backdrop_path"`
 }
 
+// CollectionDetailResponse contains only collection parts that are available
+// in the local catalog, enriched from TMDB for display.
+type CollectionDetailResponse struct {
+	ID           int64           `json:"id"`
+	Name         string          `json:"name"`
+	Overview     string          `json:"overview"`
+	PosterPath   string          `json:"poster_path"`
+	BackdropPath string          `json:"backdrop_path"`
+	Parts        []MovieResponse `json:"parts"`
+}
+
 type Genre struct {
 	ID   int64  `bson:"id"   json:"id"`
 	Name string `bson:"name" json:"name"`

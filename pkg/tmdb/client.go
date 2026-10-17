@@ -63,6 +63,33 @@ func (c *Client) GetMovieDetail(ctx context.Context, id int64, appendKeys string
 	return nil
 }
 
+// GetCollection fetches /collection/{id} from TMDB.
+func (c *Client) GetCollection(ctx context.Context, id int64, target any) error {
+	endpoint := fmt.Sprintf("%s/collection/%d?language=en-US", baseURL, id)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return fmt.Errorf("tmdb: build request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+c.accessToken)
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return fmt.Errorf("tmdb: request /collection/%d: %w", id, err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusNotFound {
+		return fmt.Errorf("tmdb: /collection/%d: %w", id, ErrNotFound)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("tmdb: /collection/%d returned status %d", id, resp.StatusCode)
+	}
+	if err := json.NewDecoder(resp.Body).Decode(target); err != nil {
+		return fmt.Errorf("tmdb: decode /collection/%d: %w", id, err)
+	}
+	return nil
+}
+
 // GetTVSeason fetches /tv/{id}/season/{season} from TMDB.
 func (c *Client) GetTVSeason(ctx context.Context, tvID int64, season int, target any) error {
 	url := fmt.Sprintf("%s/tv/%d/season/%d?language=en-US", baseURL, tvID, season)
