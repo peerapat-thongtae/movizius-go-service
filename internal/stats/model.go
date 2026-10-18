@@ -14,13 +14,14 @@ type Period struct {
 	Type      string `json:"type"` // "month", "year", or "all"
 	Year      int    `json:"year,omitempty"`
 	Month     int    `json:"month,omitempty"`
-	MediaType string `json:"media_type"` // "movie", "tv", or "all"
+	MediaType string `json:"media_type"` // "movie", "tv", "anime", or "all"
 }
 
 // Totals holds the raw counts and aggregate watch time for a Summary.
 type Totals struct {
 	MoviesWatched         int `json:"movies_watched"`
 	TVShowsWatched        int `json:"tv_shows_watched"`
+	AnimeShowsWatched     int `json:"anime_shows_watched"`
 	EpisodesWatched       int `json:"episodes_watched"`
 	TotalWatchTimeMinutes int `json:"total_watch_time_minutes"`
 }
@@ -130,6 +131,7 @@ type tvWatchRecord struct {
 	CastIDs          []int64  `bson:"cast_ids"`
 	CreatorIDs       []int64  `bson:"creator_ids"`
 	OriginalLanguage string   `bson:"original_language"`
+	IsAnime          bool     `bson:"is_anime"`
 	FirstAirDate     string   `bson:"first_air_date"`
 	EpisodesInPeriod int      `bson:"episodes_in_period"`
 }

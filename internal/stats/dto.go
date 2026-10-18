@@ -12,7 +12,7 @@ type SummaryQuery struct {
 	Period    string // "month", "year", or "all"
 	Year      int
 	Month     int    // 1-12, only set when Period == "month"
-	MediaType string // "movie", "tv", or "all"
+	MediaType string // "movie", "tv", "anime", or "all"
 }
 
 // summaryQueryFromRequest parses SummaryQuery from the request's URL query
@@ -27,8 +27,8 @@ func summaryQueryFromRequest(r *http.Request) (SummaryQuery, error) {
 	if mediaType == "" {
 		mediaType = "all"
 	}
-	if mediaType != "all" && mediaType != "movie" && mediaType != "tv" {
-		return SummaryQuery{}, fmt.Errorf("media_type must be one of: all, movie, tv")
+	if mediaType != "all" && mediaType != "movie" && mediaType != "tv" && mediaType != "anime" {
+		return SummaryQuery{}, fmt.Errorf("media_type must be one of: all, movie, tv, anime")
 	}
 
 	sq := SummaryQuery{Period: period, MediaType: mediaType}

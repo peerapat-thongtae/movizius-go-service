@@ -99,7 +99,7 @@ func filterCredits(credits []Credit, movies map[int64]movie.Movie, series map[in
 				filtered = append(filtered, credit)
 			}
 		case "tv":
-			if _, ok := series[credit.ID]; ok {
+			if show, ok := series[credit.ID]; ok && !show.IsAnime {
 				filtered = append(filtered, credit)
 			}
 		}

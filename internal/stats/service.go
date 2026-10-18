@@ -34,6 +34,14 @@ func NewService(repo Repository, tmdbClient *tmdb.Client, movies *movie.MovieSer
 // described by q.
 func (s *Service) GetSummary(ctx context.Context, userID string, q SummaryQuery) (Summary, error) {
 	from, to := q.dateRange()
+	var isAnime *bool
+	if q.MediaType == "tv" {
+		value := false
+		isAnime = &value
+	} else if q.MediaType == "anime" {
+		value := true
+		isAnime = &value
+	}
 
 	var movies []movieWatchRecord
 	if q.MediaType == "all" || q.MediaType == "movie" {
@@ -45,9 +53,9 @@ func (s *Service) GetSummary(ctx context.Context, userID string, q SummaryQuery)
 	}
 
 	var shows []tvWatchRecord
-	if q.MediaType == "all" || q.MediaType == "tv" {
+	if q.MediaType == "all" || q.MediaType == "tv" || q.MediaType == "anime" {
 		var err error
-		shows, err = s.repo.FindWatchedTV(ctx, userID, from, to)
+		shows, err = s.repo.FindWatchedTV(ctx, userID, from, to, isAnime)
 		if err != nil {
 			return Summary{}, fmt.Errorf("stats: get summary: %w", err)
 		}
@@ -58,7 +66,7 @@ func (s *Service) GetSummary(ctx context.Context, userID string, q SummaryQuery)
 	directorCounts := make(map[int64]int)
 	langCounts := make(map[string]int)
 
-	var episodesWatched, watchMinutes int
+	var episodesWatched, watchMinutes, tvShowsWatched, animeShowsWatched int
 	var myRatingSum, othersRatingSum float64
 	var myRatingCount, othersRatingCount int
 	ratingCounts := make(map[int]int)
@@ -91,6 +99,11 @@ func (s *Service) GetSummary(ctx context.Context, userID string, q SummaryQuery)
 	}
 
 	for _, tv := range shows {
+		if tv.IsAnime {
+			animeShowsWatched++
+		} else {
+			tvShowsWatched++
+		}
 		addCounts(genreCounts, tv.Genres)
 		addCounts(actorCounts, tv.CastIDs)
 		addCounts(directorCounts, tv.CreatorIDs)
@@ -112,7 +125,7 @@ func (s *Service) GetSummary(ctx context.Context, userID string, q SummaryQuery)
 		}
 	}
 
-	snapshot, completion, err := s.repo.GetLibrarySnapshot(ctx, userID)
+	snapshot, completion, err := s.repo.GetLibrarySnapshot(ctx, userID, isAnime)
 	if err != nil {
 		return Summary{}, fmt.Errorf("stats: get library snapshot: %w", err)
 	}
@@ -121,7 +134,7 @@ func (s *Service) GetSummary(ctx context.Context, userID string, q SummaryQuery)
 		snapshot.TVInProgress = 0
 		completion.TVShows = 0
 	}
-	if q.MediaType == "tv" {
+	if q.MediaType == "tv" || q.MediaType == "anime" {
 		snapshot.MoviesToWatch = 0
 		completion.Movies = 0
 	}
@@ -130,7 +143,8 @@ func (s *Service) GetSummary(ctx context.Context, userID string, q SummaryQuery)
 		Period: Period{Type: q.Period, Year: q.Year, Month: q.Month, MediaType: q.MediaType},
 		Totals: Totals{
 			MoviesWatched:         len(movies),
-			TVShowsWatched:        len(shows),
+			TVShowsWatched:        tvShowsWatched,
+			AnimeShowsWatched:     animeShowsWatched,
 			EpisodesWatched:       episodesWatched,
 			TotalWatchTimeMinutes: watchMinutes,
 		},

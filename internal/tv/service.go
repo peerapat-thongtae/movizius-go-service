@@ -36,6 +36,7 @@ const recommendationCandidateLimit = 300
 
 // Hero is a fixed curated rail rather than a paginated browsing surface.
 const heroResultLimit = 20
+const animeHeroResultLimit = 5
 const heroMaxPages = 25
 const waitingNextEpisodeResultLimit = 20
 const topRatedResultLimit = 20
@@ -75,8 +76,12 @@ func randomSeenKey(userID string) string {
 	return "tv:random:seen:" + userID
 }
 
-func randomRecommendationSeenKey(userID string) string {
-	return "tv:recommendations:random:seen:" + userID
+func randomRecommendationSeenKey(userID string, isAnime bool) string {
+	catalog := "tv"
+	if isAnime {
+		catalog = "anime"
+	}
+	return "tv:recommendations:random:seen:" + catalog + ":" + userID
 }
 
 // loadSeenIDs returns the ids previously served under the given cache key.
@@ -123,10 +128,10 @@ func (s *TVService) Discover(ctx context.Context, userID string, q DiscoverQuery
 	return results, total, nil
 }
 
-// TopRated returns a fixed rail of scripted series with a sufficiently large
-// voting sample, ordered by their weighted rating.
-func (s *TVService) TopRated(ctx context.Context) ([]TVResponse, error) {
-	ids, err := s.repo.TopRatedIDs(ctx, topRatedResultLimit)
+// TopRated returns a fixed rail of either regular scripted series or anime
+// with a sufficiently large voting sample, ordered by their weighted rating.
+func (s *TVService) TopRated(ctx context.Context, isAnime bool) ([]TVResponse, error) {
+	ids, err := s.repo.TopRatedIDs(ctx, topRatedResultLimit, isAnime)
 	if err != nil {
 		return nil, fmt.Errorf("tv service: top rated ids: %w", err)
 	}
@@ -152,7 +157,7 @@ func (s *TVService) Recommendations(ctx context.Context, userID string, page int
 	if criteria.empty() {
 		return []TVResponse{}, 0, nil
 	}
-	candidates, err := s.repo.FindRecommendationCandidates(ctx, criteria, aff.WatchedIDs, recommendationCandidateLimit)
+	candidates, err := s.repo.FindRecommendationCandidates(ctx, criteria, aff.WatchedIDs, recommendationCandidateLimit, false)
 	if err != nil {
 		return nil, 0, fmt.Errorf("tv service: find recommendation candidates: %w", err)
 	}
@@ -177,11 +182,11 @@ func (s *TVService) Recommendations(ctx context.Context, userID string, page int
 // RandomRecommendations returns a random personalized selection. It uses the
 // same affinity criteria as Recommendations, but samples from eligible titles
 // and remembers served ids so consecutive calls do not repeat picks.
-func (s *TVService) RandomRecommendations(ctx context.Context, userID string, total int) ([]TVResponse, error) {
-	return s.randomRecommendations(ctx, userID, total, true)
+func (s *TVService) RandomRecommendations(ctx context.Context, userID string, total int, isAnime bool) ([]TVResponse, error) {
+	return s.randomRecommendations(ctx, userID, total, isAnime, true)
 }
 
-func (s *TVService) randomRecommendations(ctx context.Context, userID string, total int, resetSeenWhenExhausted bool) ([]TVResponse, error) {
+func (s *TVService) randomRecommendations(ctx context.Context, userID string, total int, isAnime bool, resetSeenWhenExhausted bool) ([]TVResponse, error) {
 	if s.recommendation == nil {
 		return []TVResponse{}, nil
 	}
@@ -199,11 +204,11 @@ func (s *TVService) randomRecommendations(ctx context.Context, userID string, to
 		return []TVResponse{}, nil
 	}
 
-	candidates, err := s.repo.FindRecommendationCandidates(ctx, criteria, aff.WatchedIDs, recommendationCandidateLimit)
+	candidates, err := s.repo.FindRecommendationCandidates(ctx, criteria, aff.WatchedIDs, recommendationCandidateLimit, isAnime)
 	if err != nil {
 		return nil, fmt.Errorf("tv service: find random recommendation candidates: %w", err)
 	}
-	seenIDs := s.loadSeenIDs(ctx, randomRecommendationSeenKey(userID))
+	seenIDs := s.loadSeenIDs(ctx, randomRecommendationSeenKey(userID, isAnime))
 	seenSet := make(map[int64]struct{}, len(seenIDs))
 	for _, id := range seenIDs {
 		seenSet[id] = struct{}{}
@@ -236,7 +241,18 @@ func (s *TVService) randomRecommendations(ctx context.Context, userID string, to
 		if err != nil {
 			return nil, fmt.Errorf("tv service: random recommendation trending page %d: %w", page, err)
 		}
+		trendingCandidateIDs := make([]int64, 0, len(trendingPage.Results))
 		for _, show := range trendingPage.Results {
+			trendingCandidateIDs = append(trendingCandidateIDs, show.ID)
+		}
+		cached, err := s.repo.FindByTMDBIDs(ctx, trendingCandidateIDs)
+		if err != nil {
+			return nil, fmt.Errorf("tv service: random recommendation trending cached ids: %w", err)
+		}
+		for _, show := range trendingPage.Results {
+			if cachedShow, ok := cached[show.ID]; !ok || cachedShow.IsAnime != isAnime {
+				continue
+			}
 			if _, watched := watchedSet[show.ID]; watched {
 				continue
 			}
@@ -257,7 +273,7 @@ func (s *TVService) randomRecommendations(ctx context.Context, userID string, to
 	ids = append(ids, trendingIDs...)
 
 	if len(ids) < total {
-		discoverIDs, err := s.discoverRecommendationIDs(ctx, positiveScoreIDs(aff.Genres), watchedSet, seenSet, selectedIDs, total-len(ids))
+		discoverIDs, err := s.discoverRecommendationIDs(ctx, positiveScoreIDs(aff.Genres), watchedSet, seenSet, selectedIDs, total-len(ids), isAnime)
 		if err != nil {
 			return nil, err
 		}
@@ -276,21 +292,21 @@ func (s *TVService) randomRecommendations(ctx context.Context, userID string, to
 	}
 	rand.Shuffle(len(ids), func(i, j int) { ids[i], ids[j] = ids[j], ids[i] })
 	if len(ids) == 0 && resetSeenWhenExhausted && len(seenIDs) > 0 {
-		_ = s.cache.Delete(ctx, randomRecommendationSeenKey(userID))
-		return s.randomRecommendations(ctx, userID, total, false)
+		_ = s.cache.Delete(ctx, randomRecommendationSeenKey(userID, isAnime))
+		return s.randomRecommendations(ctx, userID, total, isAnime, false)
 	}
 	results, err := s.GetByIDs(ctx, ids)
 	if err != nil {
 		return nil, err
 	}
-	s.saveSeenIDs(ctx, randomRecommendationSeenKey(userID), seenIDs, ids)
+	s.saveSeenIDs(ctx, randomRecommendationSeenKey(userID, isAnime), seenIDs, ids)
 	return results, nil
 }
 
 // discoverRecommendationIDs broadens a depleted personalized pool with
 // unwatched, unseen titles from TMDB Discover, using one of the user's liked
 // genres to retain relevance.
-func (s *TVService) discoverRecommendationIDs(ctx context.Context, genreIDs []int64, watchedSet, seenSet, selectedIDs map[int64]struct{}, total int) ([]int64, error) {
+func (s *TVService) discoverRecommendationIDs(ctx context.Context, genreIDs []int64, watchedSet, seenSet, selectedIDs map[int64]struct{}, total int, isAnime bool) ([]int64, error) {
 	if total == 0 {
 		return nil, nil
 	}
@@ -314,7 +330,8 @@ func (s *TVService) discoverRecommendationIDs(ctx context.Context, genreIDs []in
 			return nil, fmt.Errorf("tv service: discover recommendation cached ids: %w", err)
 		}
 		for _, show := range discoverPage.Results {
-			if _, known := cached[show.ID]; !known {
+			cachedShow, known := cached[show.ID]
+			if !known || cachedShow.IsAnime != isAnime {
 				continue
 			}
 			if _, watched := watchedSet[show.ID]; watched {
@@ -499,8 +516,8 @@ func (s *TVService) trackedExcludeIDs(ctx context.Context, userID string, withou
 
 // Search finds TV series in the local catalog by name, then enriches the
 // matched series with their full TMDB detail payload.
-func (s *TVService) Search(ctx context.Context, query string, page int) (*response.Page[TVResponse], error) {
-	ids, total, err := s.repo.SearchIDs(ctx, query, page)
+func (s *TVService) Search(ctx context.Context, query string, page int, isAnime bool) (*response.Page[TVResponse], error) {
+	ids, total, err := s.repo.SearchIDs(ctx, query, page, isAnime)
 	if err != nil {
 		return nil, fmt.Errorf("tv service: search local catalog: %w", err)
 	}
@@ -591,7 +608,11 @@ func (s *TVService) Trending(ctx context.Context, timeWindow string, page int) (
 // Hero returns exactly up to heroResultLimit currently trending series that
 // exist in the local catalog and are neither watched nor waiting for the next
 // episode. It scans more TMDB pages whenever filtering leaves a sparse result.
-func (s *TVService) Hero(ctx context.Context, userID string) ([]TVResponse, error) {
+func (s *TVService) Hero(ctx context.Context, userID string, isAnime bool) ([]TVResponse, error) {
+	resultLimit := heroResultLimit
+	if isAnime {
+		resultLimit = animeHeroResultLimit
+	}
 	states, err := s.repo.GetStatesByUserID(ctx, userID)
 	if err != nil {
 		return nil, fmt.Errorf("tv service: hero states: %w", err)
@@ -603,9 +624,9 @@ func (s *TVService) Hero(ctx context.Context, userID string) ([]TVResponse, erro
 		}
 	}
 
-	results := make([]TVResponse, 0, heroResultLimit)
-	selected := make(map[int64]struct{}, heroResultLimit)
-	for page := 1; page <= heroMaxPages && len(results) < heroResultLimit; page++ {
+	results := make([]TVResponse, 0, resultLimit)
+	selected := make(map[int64]struct{}, resultLimit)
+	for page := 1; page <= heroMaxPages && len(results) < resultLimit; page++ {
 		trendingPage, err := s.tmdb.GetTrending(ctx, "tv", randomTimeWindow, page)
 		if err != nil {
 			return nil, fmt.Errorf("tv service: hero trending page %d: %w", page, err)
@@ -629,12 +650,12 @@ func (s *TVService) Hero(ctx context.Context, userID string) ([]TVResponse, erro
 			return nil, fmt.Errorf("tv service: hero enrich page %d: %w", page, err)
 		}
 		for _, show := range details {
-			if !isAcceptableTV(show) || show.BackdropPath == "" {
+			if !isAcceptableTV(show) || show.IsAnime != isAnime || show.BackdropPath == "" {
 				continue
 			}
 			selected[show.ID] = struct{}{}
 			results = append(results, show)
-			if len(results) == heroResultLimit {
+			if len(results) == resultLimit {
 				break
 			}
 		}
@@ -908,7 +929,7 @@ func (s *TVService) GetStates(ctx context.Context, userID string) ([]TVStateResp
 // UpcomingEpisodes returns watchlisted or caught-up TV series whose next
 // episode has a known future air date. It is a dedicated home-rail payload,
 // so clients do not need to combine discover and states responses.
-func (s *TVService) UpcomingEpisodes(ctx context.Context, userID string) ([]TVStateResponse, error) {
+func (s *TVService) UpcomingEpisodes(ctx context.Context, userID string, isAnime bool) ([]TVStateResponse, error) {
 	states, err := s.repo.GetStatesByUserID(ctx, userID)
 	if err != nil {
 		return nil, fmt.Errorf("tv service: get upcoming episode states: %w", err)
@@ -916,7 +937,7 @@ func (s *TVService) UpcomingEpisodes(ctx context.Context, userID string) ([]TVSt
 
 	results := make([]TVStateResponse, 0, len(states))
 	for _, state := range states {
-		if (state.AccountStatus != "waiting_next_ep" && state.AccountStatus != "watchlist") || state.NextEpisodeToAir == nil || string(state.NextEpisodeToAir.AirDate) == "" {
+		if state.IsAnime != isAnime || (state.AccountStatus != "waiting_next_ep" && state.AccountStatus != "watchlist") || state.NextEpisodeToAir == nil || string(state.NextEpisodeToAir.AirDate) == "" {
 			continue
 		}
 		// A watchlist entry has not been started yet, so only surface a true
@@ -959,7 +980,7 @@ func (s *TVService) UpcomingEpisodes(ctx context.Context, userID string) ([]TVSt
 
 // NowAiringWatchlist returns series the user saved before starting, once more
 // than the premiere has aired.
-func (s *TVService) NowAiringWatchlist(ctx context.Context, userID string) ([]TVStateResponse, error) {
+func (s *TVService) NowAiringWatchlist(ctx context.Context, userID string, isAnime bool) ([]TVStateResponse, error) {
 	states, err := s.repo.GetStatesByUserID(ctx, userID)
 	if err != nil {
 		return nil, fmt.Errorf("tv service: get now airing watchlist states: %w", err)
@@ -969,7 +990,7 @@ func (s *TVService) NowAiringWatchlist(ctx context.Context, userID string) ([]TV
 	results := make([]TVStateResponse, 0, len(states))
 	for _, state := range states {
 		last := state.LastEpisodeToAir
-		if state.AccountStatus != "watchlist" || state.TVStatus != "Returning Series" || last == nil || string(last.AirDate) == "" || string(last.AirDate) > today {
+		if state.IsAnime != isAnime || state.AccountStatus != "watchlist" || state.TVStatus != "Returning Series" || last == nil || string(last.AirDate) == "" || string(last.AirDate) > today {
 			continue
 		}
 		if last.SeasonNumber == 1 && last.EpisodeNumber <= 1 {

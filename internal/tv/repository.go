@@ -21,9 +21,9 @@ type TVRepository interface {
 	GetStatesByUserID(ctx context.Context, userID string) ([]TVStateResponse, error)
 	FindByTMDBIDs(ctx context.Context, ids []int64) (map[int64]TV, error)
 	FindTrackedIDs(ctx context.Context, ids []int64) (map[int64]struct{}, error)
-	SearchIDs(ctx context.Context, query string, page int) (ids []int64, total int, err error)
+	SearchIDs(ctx context.Context, query string, page int, isAnime bool) (ids []int64, total int, err error)
 	DiscoverIDs(ctx context.Context, userID string, q DiscoverQuery) (ids []int64, total int, err error)
-	TopRatedIDs(ctx context.Context, limit int) ([]int64, error)
+	TopRatedIDs(ctx context.Context, limit int, isAnime bool) ([]int64, error)
 	UpsertTVState(ctx context.Context, userID string, tvID int64, episodes []EpisodeWatched, rating *float64) error
 	UpsertEpisodes(ctx context.Context, userID string, req UpsertEpisodesRequest) error
 	UpsertDetail(ctx context.Context, data TVResponse) error
@@ -40,7 +40,7 @@ type TVRepository interface {
 	UpdateProfileContribution(ctx context.Context, userID string, tvID int64, c ProfileContribution) error
 	// FindAllTVUserDocs returns every tv_user doc (for recommendation profile full recompute).
 	FindAllTVUserDocs(ctx context.Context) ([]TVUser, error)
-	FindRecommendationCandidates(ctx context.Context, criteria RecommendationCriteria, excludeIDs []int64, limit int) ([]TV, error)
+	FindRecommendationCandidates(ctx context.Context, criteria RecommendationCriteria, excludeIDs []int64, limit int, isAnime bool) ([]TV, error)
 }
 
 type RecommendationCriteria struct {
@@ -96,22 +96,25 @@ func (r *mongoTVRepository) FindByTMDBIDs(ctx context.Context, ids []int64) (map
 	return result, cursor.Err()
 }
 
-// TopRatedIDs returns scripted TV series ranked with a Bayesian weighted
+// TopRatedIDs returns either scripted TV series or anime ranked with a Bayesian weighted
 // rating. A title needs more than 20,000 votes, while the score still gives
 // substantially larger voting samples more confidence than raw rating alone.
-func (r *mongoTVRepository) TopRatedIDs(ctx context.Context, limit int) ([]int64, error) {
+func (r *mongoTVRepository) TopRatedIDs(ctx context.Context, limit int, isAnime bool) ([]int64, error) {
 	if limit < 1 {
 		return []int64{}, nil
 	}
 
 	baseFilter := bson.D{
 		{Key: "adult", Value: bson.D{{Key: "$ne", Value: true}}},
-		{Key: "type", Value: "Scripted"},
+		{Key: "is_anime", Value: isAnime},
 		{Key: "poster_path", Value: bson.D{
 			{Key: "$type", Value: "string"},
 			{Key: "$ne", Value: ""},
 		}},
 		{Key: "vote_average", Value: bson.D{{Key: "$gt", Value: 0}}},
+	}
+	if !isAnime {
+		baseFilter = append(baseFilter, bson.E{Key: "type", Value: "Scripted"})
 	}
 
 	// C is the average catalog rating. It pulls smaller voting samples toward a
@@ -211,8 +214,8 @@ func (r *mongoTVRepository) FindTrackedIDs(ctx context.Context, ids []int64) (ma
 }
 
 // SearchIDs ranks local name matches as exact, prefix, then contains matches.
-func (r *mongoTVRepository) SearchIDs(ctx context.Context, query string, page int) ([]int64, int, error) {
-	pipeline := buildTitleSearchPipeline(query, page, "name", "original_name")
+func (r *mongoTVRepository) SearchIDs(ctx context.Context, query string, page int, isAnime bool) ([]int64, int, error) {
+	pipeline := buildTitleSearchPipeline(query, page, "name", "original_name", bson.D{{Key: "is_anime", Value: isAnime}})
 	cursor, err := r.db.Collection("tv").Aggregate(ctx, pipeline)
 	if err != nil {
 		return nil, 0, fmt.Errorf("tv: search aggregate: %w", err)
@@ -248,7 +251,7 @@ func searchFacet(result []searchFacetResult) ([]int64, int, error) {
 	return ids, result[0].Metadata[0].Total, nil
 }
 
-func buildTitleSearchPipeline(query string, page int, titleField, originalTitleField string) bson.A {
+func buildTitleSearchPipeline(query string, page int, titleField, originalTitleField string, catalogFilter bson.D) bson.A {
 	const pageSize = 20
 	quoted := regexp.QuoteMeta(strings.TrimSpace(query))
 	matchAny := func(pattern string) bson.D {
@@ -272,8 +275,10 @@ func buildTitleSearchPipeline(query string, page int, titleField, originalTitleF
 		}},
 		{Key: "default", Value: 1},
 	}}}
+	match := matchAny(quoted)
+	match = append(match, catalogFilter...)
 	return bson.A{
-		bson.D{{Key: "$match", Value: matchAny(quoted)}},
+		bson.D{{Key: "$match", Value: match}},
 		bson.D{{Key: "$addFields", Value: bson.D{{Key: "_search_rank", Value: rank}}}},
 		bson.D{{Key: "$sort", Value: bson.D{{Key: "_search_rank", Value: -1}, {Key: "popularity", Value: -1}, {Key: "vote_count", Value: -1}, {Key: "id", Value: 1}}}},
 		bson.D{{Key: "$facet", Value: bson.D{
@@ -287,7 +292,7 @@ func buildTitleSearchPipeline(query string, page int, titleField, originalTitleF
 	}
 }
 
-func (r *mongoTVRepository) FindRecommendationCandidates(ctx context.Context, criteria RecommendationCriteria, excludeIDs []int64, limit int) ([]TV, error) {
+func (r *mongoTVRepository) FindRecommendationCandidates(ctx context.Context, criteria RecommendationCriteria, excludeIDs []int64, limit int, isAnime bool) ([]TV, error) {
 	if criteria.empty() {
 		return nil, nil
 	}
@@ -309,7 +314,7 @@ func (r *mongoTVRepository) FindRecommendationCandidates(ctx context.Context, cr
 		or = append(or, bson.M{"production_companies": bson.M{"$in": criteria.CompanyIDs}})
 	}
 
-	filter := bson.M{"$or": or}
+	filter := bson.M{"$or": or, "is_anime": isAnime}
 	if len(excludeIDs) > 0 {
 		filter["id"] = bson.M{"$nin": excludeIDs}
 	}
@@ -687,7 +692,7 @@ func (r *mongoTVRepository) UpsertDetail(ctx context.Context, data TVResponse) e
 	filter := bson.M{"id": data.ID}
 	model := tvToModel(data, now)
 	update := bson.M{
-		"$set": bsonutil.StructToBsonM(model, "_id", "id", "vote_average", "vote_count"),
+		"$set": bsonutil.StructToBsonM(model, "_id", "id", "vote_average", "vote_count", "is_anime"),
 		"$unset": bson.M{
 			"on_screen_cast_ids": "",
 			"writer_ids":         "",
@@ -696,6 +701,7 @@ func (r *mongoTVRepository) UpsertDetail(ctx context.Context, data TVResponse) e
 		"$setOnInsert": bson.M{
 			"vote_average": data.VoteAverage,
 			"vote_count":   data.VoteCount,
+			"is_anime":     false,
 		},
 	}
 	_, err := r.db.Collection("tv").UpdateOne(ctx, filter, update, options.Update().SetUpsert(true))

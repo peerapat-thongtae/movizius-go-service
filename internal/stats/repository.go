@@ -17,12 +17,12 @@ type Repository interface {
 	// FindWatchedTV returns one record per TV show with at least one episode
 	// watched in [from, to), with EpisodesInPeriod counting only episodes in
 	// that range. Both bounds nil means unbounded.
-	FindWatchedTV(ctx context.Context, userID string, from, to *time.Time) ([]tvWatchRecord, error)
-	GetLibrarySnapshot(ctx context.Context, userID string) (LibrarySnapshot, Completion, error)
+	FindWatchedTV(ctx context.Context, userID string, from, to *time.Time, isAnime *bool) ([]tvWatchRecord, error)
+	GetLibrarySnapshot(ctx context.Context, userID string, isAnime *bool) (LibrarySnapshot, Completion, error)
 	FindWatchedTitlesByPerson(ctx context.Context, userID string, personID int64, role, mediaType string, from, to *time.Time) ([]PersonTitle, error)
 }
 
-func (r *mongoRepository) GetLibrarySnapshot(ctx context.Context, userID string) (LibrarySnapshot, Completion, error) {
+func (r *mongoRepository) GetLibrarySnapshot(ctx context.Context, userID string, isAnime *bool) (LibrarySnapshot, Completion, error) {
 	moviesToWatch, err := r.db.Collection("movie_user").CountDocuments(ctx, bson.M{
 		"user_id":    userID,
 		"watched_at": nil,
@@ -60,6 +60,9 @@ func (r *mongoRepository) GetLibrarySnapshot(ctx context.Context, userID string)
 				}},
 			}}, 1, 0}}},
 		}},
+	}
+	if isAnime != nil {
+		pipeline = append(pipeline[:3], append(bson.A{bson.M{"$match": bson.M{"tv.is_anime": *isAnime}}}, pipeline[3:]...)...)
 	}
 	cursor, err := r.db.Collection("tv_user").Aggregate(ctx, pipeline)
 	if err != nil {
@@ -109,6 +112,10 @@ func (r *mongoRepository) FindWatchedTitlesByPerson(ctx context.Context, userID 
 		bson.M{"$match": tvMatch},
 		bson.M{"$project": bson.M{"id": "$tv.id", "media_type": bson.M{"$literal": "tv"}, "title": "$tv.name", "poster_path": "$tv.poster_path", "first_air_date": "$tv.first_air_date", "watched_at": 1}},
 	}
+	if mediaType == "tv" || mediaType == "anime" {
+		isAnime := mediaType == "anime"
+		tvPipeline = append(tvPipeline[:6], append(bson.A{bson.M{"$match": bson.M{"tv.is_anime": isAnime}}}, tvPipeline[6:]...)...)
+	}
 
 	results := make([]PersonTitle, 0)
 	for _, query := range []struct {
@@ -116,7 +123,7 @@ func (r *mongoRepository) FindWatchedTitlesByPerson(ctx context.Context, userID 
 		collection string
 		pipeline   bson.A
 	}{{"movie", "movie_user", moviePipeline}, {"tv", "tv_user", tvPipeline}} {
-		if mediaType != "all" && mediaType != query.mediaType {
+		if mediaType != "all" && mediaType != query.mediaType && !(mediaType == "anime" && query.mediaType == "tv") {
 			continue
 		}
 		cursor, err := r.db.Collection(query.collection).Aggregate(ctx, query.pipeline)
@@ -192,7 +199,7 @@ func (r *mongoRepository) FindWatchedMovies(ctx context.Context, userID string, 
 	return results, nil
 }
 
-func (r *mongoRepository) FindWatchedTV(ctx context.Context, userID string, from, to *time.Time) ([]tvWatchRecord, error) {
+func (r *mongoRepository) FindWatchedTV(ctx context.Context, userID string, from, to *time.Time, isAnime *bool) ([]tvWatchRecord, error) {
 	pipeline := bson.A{
 		bson.M{"$match": bson.M{"user_id": userID}},
 		bson.M{"$unwind": "$episode_watched"},
@@ -219,9 +226,13 @@ func (r *mongoRepository) FindWatchedTV(ctx context.Context, userID string, from
 			"cast_ids":           "$tv.cast_ids",
 			"creator_ids":        "$tv.creator_ids",
 			"original_language":  "$tv.original_language",
+			"is_anime":           "$tv.is_anime",
 			"first_air_date":     "$tv.first_air_date",
 			"episodes_in_period": "$episodesInPeriod",
 		}},
+	}
+	if isAnime != nil {
+		pipeline = append(pipeline[:6], append(bson.A{bson.M{"$match": bson.M{"tv.is_anime": *isAnime}}}, pipeline[6:]...)...)
 	}
 
 	cursor, err := r.db.Collection("tv_user").Aggregate(ctx, pipeline)

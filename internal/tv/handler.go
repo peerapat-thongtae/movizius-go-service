@@ -32,13 +32,20 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux, auth func(http.Handler) htt
 	mux.Handle("GET /tv/states", auth(http.HandlerFunc(h.GetStates)))
 	mux.Handle("GET /tv/upcoming-episodes", auth(http.HandlerFunc(h.UpcomingEpisodes)))
 	mux.Handle("GET /tv/watchlist/now-airing", auth(http.HandlerFunc(h.NowAiringWatchlist)))
+	mux.Handle("GET /anime/upcoming-episodes", auth(http.HandlerFunc(h.AnimeUpcomingEpisodes)))
+	mux.Handle("GET /anime/watchlist/now-airing", auth(http.HandlerFunc(h.AnimeNowAiringWatchlist)))
 	mux.Handle("GET /tv/discover", auth(http.HandlerFunc(h.Discover)))
 	mux.Handle("GET /tv/top-rated", auth(http.HandlerFunc(h.TopRated)))
+	mux.Handle("GET /anime/discover", auth(http.HandlerFunc(h.AnimeDiscover)))
+	mux.Handle("GET /anime/top-rated", auth(http.HandlerFunc(h.AnimeTopRated)))
 	mux.Handle("GET /tv/recommendations/random", auth(http.HandlerFunc(h.RandomRecommendations)))
+	mux.Handle("GET /anime/recommendations/random", auth(http.HandlerFunc(h.AnimeRandomRecommendations)))
 	mux.Handle("GET /tv/recommendations", auth(http.HandlerFunc(h.Recommendations)))
 	mux.Handle("GET /tv/search", auth(http.HandlerFunc(h.Search)))
+	mux.Handle("GET /anime/search", auth(http.HandlerFunc(h.AnimeSearch)))
 	mux.Handle("GET /tv/random", auth(http.HandlerFunc(h.Random)))
 	mux.Handle("GET /tv/hero", auth(http.HandlerFunc(h.Hero)))
+	mux.Handle("GET /anime/hero", auth(http.HandlerFunc(h.AnimeHero)))
 	mux.Handle("GET /tv/trending", auth(http.HandlerFunc(h.Trending)))
 	mux.Handle("GET /tv/{id}", auth(http.HandlerFunc(h.GetByID)))
 	mux.Handle("GET /tv/{id}/season/{season_number}", auth(http.HandlerFunc(h.GetSeason)))
@@ -58,6 +65,14 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux, auth func(http.Handler) htt
 //	@Failure		500	{object}	map[string]string
 //	@Router			/tv/recommendations/random [get]
 func (h *Handler) RandomRecommendations(w http.ResponseWriter, r *http.Request) {
+	h.randomRecommendations(w, r, false)
+}
+
+func (h *Handler) AnimeRandomRecommendations(w http.ResponseWriter, r *http.Request) {
+	h.randomRecommendations(w, r, true)
+}
+
+func (h *Handler) randomRecommendations(w http.ResponseWriter, r *http.Request, isAnime bool) {
 	userID, ok := middleware.UserIDFromContext(r.Context())
 	if !ok {
 		response.Error(w, http.StatusUnauthorized, "unauthorized")
@@ -68,7 +83,7 @@ func (h *Handler) RandomRecommendations(w http.ResponseWriter, r *http.Request) 
 	if total < 1 {
 		total = 10
 	}
-	results, err := h.service.RandomRecommendations(r.Context(), userID, total)
+	results, err := h.service.RandomRecommendations(r.Context(), userID, total, isAnime)
 	if err != nil {
 		h.log.Error("failed to get random tv recommendations", "error", err, "user", userID, "path", r.URL.Path)
 		response.Error(w, http.StatusInternalServerError, "failed to get random tv recommendations")
@@ -120,6 +135,14 @@ func (h *Handler) Recommendations(w http.ResponseWriter, r *http.Request) {
 //	@Failure		500		{object}	map[string]string
 //	@Router			/tv/search [get]
 func (h *Handler) Search(w http.ResponseWriter, r *http.Request) {
+	h.search(w, r, false)
+}
+
+func (h *Handler) AnimeSearch(w http.ResponseWriter, r *http.Request) {
+	h.search(w, r, true)
+}
+
+func (h *Handler) search(w http.ResponseWriter, r *http.Request, isAnime bool) {
 	_, ok := middleware.UserIDFromContext(r.Context())
 	if !ok {
 		response.Error(w, http.StatusUnauthorized, "unauthorized")
@@ -137,7 +160,7 @@ func (h *Handler) Search(w http.ResponseWriter, r *http.Request) {
 		page = 1
 	}
 
-	result, err := h.service.Search(r.Context(), q, page)
+	result, err := h.service.Search(r.Context(), q, page, isAnime)
 	if err != nil {
 		h.log.Error("failed to search tv series", "error", err, "query", q, "path", r.URL.Path)
 		response.Error(w, http.StatusInternalServerError, "failed to search tv series")
@@ -313,13 +336,21 @@ func (h *Handler) Trending(w http.ResponseWriter, r *http.Request) {
 // Hero returns a fixed, non-paginated set of unwatched trending TV series for
 // the home hero. The service backfills from later TMDB pages as needed.
 func (h *Handler) Hero(w http.ResponseWriter, r *http.Request) {
+	h.hero(w, r, false)
+}
+
+func (h *Handler) AnimeHero(w http.ResponseWriter, r *http.Request) {
+	h.hero(w, r, true)
+}
+
+func (h *Handler) hero(w http.ResponseWriter, r *http.Request, isAnime bool) {
 	userID, ok := middleware.UserIDFromContext(r.Context())
 	if !ok {
 		response.Error(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
 
-	results, err := h.service.Hero(r.Context(), userID)
+	results, err := h.service.Hero(r.Context(), userID, isAnime)
 	if err != nil {
 		h.log.Error("failed to fetch tv hero", "error", err, "user", userID, "path", r.URL.Path)
 		response.Error(w, http.StatusInternalServerError, "failed to fetch tv hero")
@@ -452,6 +483,17 @@ func (h *Handler) GetSeason(w http.ResponseWriter, r *http.Request) {
 //	@Failure		500						{object}	map[string]string
 //	@Router			/tv/discover [get]
 func (h *Handler) Discover(w http.ResponseWriter, r *http.Request) {
+	h.discover(w, r, false)
+}
+
+// AnimeDiscover returns paginated anime from the same TV catalogue. The
+// is_anime condition is route-owned so callers cannot accidentally mix TV and
+// anime by passing query parameters.
+func (h *Handler) AnimeDiscover(w http.ResponseWriter, r *http.Request) {
+	h.discover(w, r, true)
+}
+
+func (h *Handler) discover(w http.ResponseWriter, r *http.Request, isAnime bool) {
 	userID, ok := middleware.UserIDFromContext(r.Context())
 	if !ok {
 		response.Error(w, http.StatusUnauthorized, "unauthorized")
@@ -459,6 +501,7 @@ func (h *Handler) Discover(w http.ResponseWriter, r *http.Request) {
 	}
 
 	q := discoverQueryFromRequest(r)
+	q.IsAnime = &isAnime
 
 	results, total, err := h.service.Discover(r.Context(), userID, q)
 	if err != nil {
@@ -491,15 +534,39 @@ func (h *Handler) Discover(w http.ResponseWriter, r *http.Request) {
 //	@Failure		500	{object}	map[string]string
 //	@Router			/tv/top-rated [get]
 func (h *Handler) TopRated(w http.ResponseWriter, r *http.Request) {
+	h.topRated(w, r, false)
+}
+
+// AnimeTopRated returns a strict, non-paginated rail of anime with more than
+// 20,000 votes, ranked by a weighted combination of rating and vote count.
+//
+//	@Summary		Top rated anime
+//	@Description	Returns up to 20 anime catalog titles with a poster and more than 20,000 votes. Ranking uses a Bayesian weighted rating.
+//	@Tags			Anime
+//	@Produce		json
+//	@Security		BearerAuth
+//	@Success		200	{object}	response.Page[TVResponse]
+//	@Failure		401	{object}	map[string]string
+//	@Failure		500	{object}	map[string]string
+//	@Router			/anime/top-rated [get]
+func (h *Handler) AnimeTopRated(w http.ResponseWriter, r *http.Request) {
+	h.topRated(w, r, true)
+}
+
+func (h *Handler) topRated(w http.ResponseWriter, r *http.Request, isAnime bool) {
 	if _, ok := middleware.UserIDFromContext(r.Context()); !ok {
 		response.Error(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
 
-	results, err := h.service.TopRated(r.Context())
+	results, err := h.service.TopRated(r.Context(), isAnime)
 	if err != nil {
-		h.log.Error("failed to get top rated tv series", "error", err, "path", r.URL.Path)
-		response.Error(w, http.StatusInternalServerError, "failed to get top rated tv series")
+		kind := "tv series"
+		if isAnime {
+			kind = "anime"
+		}
+		h.log.Error("failed to get top rated "+kind, "error", err, "path", r.URL.Path)
+		response.Error(w, http.StatusInternalServerError, "failed to get top rated "+kind)
 		return
 	}
 
@@ -551,13 +618,21 @@ func (h *Handler) GetStates(w http.ResponseWriter, r *http.Request) {
 //	@Failure		500	{object}	map[string]string
 //	@Router			/tv/upcoming-episodes [get]
 func (h *Handler) UpcomingEpisodes(w http.ResponseWriter, r *http.Request) {
+	h.upcomingEpisodes(w, r, false)
+}
+
+func (h *Handler) AnimeUpcomingEpisodes(w http.ResponseWriter, r *http.Request) {
+	h.upcomingEpisodes(w, r, true)
+}
+
+func (h *Handler) upcomingEpisodes(w http.ResponseWriter, r *http.Request, isAnime bool) {
 	userID, ok := middleware.UserIDFromContext(r.Context())
 	if !ok {
 		response.Error(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
 
-	states, err := h.service.UpcomingEpisodes(r.Context(), userID)
+	states, err := h.service.UpcomingEpisodes(r.Context(), userID, isAnime)
 	if err != nil {
 		h.log.Error("failed to fetch upcoming tv episodes", "error", err, "user", userID, "path", r.URL.Path)
 		response.Error(w, http.StatusInternalServerError, "failed to fetch upcoming tv episodes")
@@ -579,13 +654,21 @@ func (h *Handler) UpcomingEpisodes(w http.ResponseWriter, r *http.Request) {
 //	@Failure		500	{object}	map[string]string
 //	@Router			/tv/watchlist/now-airing [get]
 func (h *Handler) NowAiringWatchlist(w http.ResponseWriter, r *http.Request) {
+	h.nowAiringWatchlist(w, r, false)
+}
+
+func (h *Handler) AnimeNowAiringWatchlist(w http.ResponseWriter, r *http.Request) {
+	h.nowAiringWatchlist(w, r, true)
+}
+
+func (h *Handler) nowAiringWatchlist(w http.ResponseWriter, r *http.Request, isAnime bool) {
 	userID, ok := middleware.UserIDFromContext(r.Context())
 	if !ok {
 		response.Error(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
 
-	states, err := h.service.NowAiringWatchlist(r.Context(), userID)
+	states, err := h.service.NowAiringWatchlist(r.Context(), userID, isAnime)
 	if err != nil {
 		h.log.Error("failed to fetch now airing watchlist tv", "error", err, "user", userID, "path", r.URL.Path)
 		response.Error(w, http.StatusInternalServerError, "failed to fetch now airing watchlist tv")
