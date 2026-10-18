@@ -33,6 +33,7 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux, auth func(http.Handler) htt
 	mux.Handle("GET /tv/upcoming-episodes", auth(http.HandlerFunc(h.UpcomingEpisodes)))
 	mux.Handle("GET /tv/watchlist/now-airing", auth(http.HandlerFunc(h.NowAiringWatchlist)))
 	mux.Handle("GET /tv/discover", auth(http.HandlerFunc(h.Discover)))
+	mux.Handle("GET /tv/top-rated", auth(http.HandlerFunc(h.TopRated)))
 	mux.Handle("GET /tv/recommendations/random", auth(http.HandlerFunc(h.RandomRecommendations)))
 	mux.Handle("GET /tv/recommendations", auth(http.HandlerFunc(h.Recommendations)))
 	mux.Handle("GET /tv/search", auth(http.HandlerFunc(h.Search)))
@@ -473,6 +474,39 @@ func (h *Handler) Discover(w http.ResponseWriter, r *http.Request) {
 		Page:         q.Page,
 		TotalResults: total,
 		TotalPages:   totalPages,
+		Results:      results,
+	})
+}
+
+// TopRated returns a strict, non-paginated rail of scripted series with more
+// than 20,000 votes, ranked by a weighted combination of rating and vote count.
+//
+//	@Summary		Top rated TV series
+//	@Description	Returns up to 20 scripted, non-adult catalog series with a poster and more than 20,000 votes. Ranking uses a Bayesian weighted rating, so titles with much larger vote counts receive more confidence than equally rated titles with fewer votes.
+//	@Tags			TV
+//	@Produce		json
+//	@Security		BearerAuth
+//	@Success		200	{object}	response.Page[TVResponse]
+//	@Failure		401	{object}	map[string]string
+//	@Failure		500	{object}	map[string]string
+//	@Router			/tv/top-rated [get]
+func (h *Handler) TopRated(w http.ResponseWriter, r *http.Request) {
+	if _, ok := middleware.UserIDFromContext(r.Context()); !ok {
+		response.Error(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
+	results, err := h.service.TopRated(r.Context())
+	if err != nil {
+		h.log.Error("failed to get top rated tv series", "error", err, "path", r.URL.Path)
+		response.Error(w, http.StatusInternalServerError, "failed to get top rated tv series")
+		return
+	}
+
+	response.Success(w, http.StatusOK, response.Page[TVResponse]{
+		Page:         1,
+		TotalResults: len(results),
+		TotalPages:   1,
 		Results:      results,
 	})
 }

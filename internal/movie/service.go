@@ -47,6 +47,9 @@ const recommendationCandidateLimit = 300
 // paginated browsing surface.
 const heroResultLimit = 20
 
+// topRatedResultLimit is a curated rail, not a paginated browse result.
+const topRatedResultLimit = 20
+
 // heroMaxPages bounds how far we scan TMDB Trending when watched, missing, or
 // unacceptable titles leave a sparse page after the local-catalog gate.
 const heroMaxPages = 25
@@ -166,6 +169,16 @@ func (s *MovieService) Discover(ctx context.Context, userID string, q DiscoverQu
 		return nil, 0, err
 	}
 	return results, total, nil
+}
+
+// TopRated returns catalog movies with a sufficiently large voting sample,
+// enriched in the same way as other movie rails.
+func (s *MovieService) TopRated(ctx context.Context) ([]MovieResponse, error) {
+	ids, err := s.repo.TopRatedIDs(ctx, topRatedResultLimit)
+	if err != nil {
+		return nil, fmt.Errorf("movie service: find top rated ids: %w", err)
+	}
+	return s.enrichMovieIDs(ctx, ids)
 }
 
 // GetByIDs returns the same enriched response shape as Discover for a known

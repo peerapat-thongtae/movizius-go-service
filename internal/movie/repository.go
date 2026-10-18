@@ -23,6 +23,7 @@ type MovieRepository interface {
 	FindTrackedIDs(ctx context.Context, ids []int64) (map[int64]struct{}, error)
 	SearchIDs(ctx context.Context, query string, page int) (ids []int64, total int, err error)
 	DiscoverIDs(ctx context.Context, userID string, q DiscoverQuery) (ids []int64, total int, err error)
+	TopRatedIDs(ctx context.Context, limit int) ([]int64, error)
 	UpsertState(ctx context.Context, userID string, req UpsertStateRequest) error
 	UpsertDetail(ctx context.Context, data MovieResponse) error
 	DeleteByTMDBID(ctx context.Context, id int64) error
@@ -70,6 +71,11 @@ type mongoMovieRepository struct {
 	db *mongo.Database
 }
 
+const (
+	topRatedMinimumVotes    int64   = 20000
+	topRatedFallbackAverage float64 = 6.5
+)
+
 // NewRepository constructs a MovieRepository backed by MongoDB.
 func NewRepository(db *mongo.Database) MovieRepository {
 	return &mongoMovieRepository{db: db}
@@ -107,6 +113,99 @@ func (r *mongoMovieRepository) FindByTMDBIDs(ctx context.Context, ids []int64) (
 		result[m.MovieID] = m
 	}
 	return result, cursor.Err()
+}
+
+// TopRatedIDs returns proven, released catalog movies ranked with a Bayesian
+// weighted rating. The score accounts for both vote average and vote count, so
+// a score from a smaller sample cannot outrank a similarly-rated title with a
+// much larger audience.
+func (r *mongoMovieRepository) TopRatedIDs(ctx context.Context, limit int) ([]int64, error) {
+	if limit < 1 {
+		return []int64{}, nil
+	}
+
+	baseFilter := bson.D{
+		{Key: "adult", Value: bson.D{{Key: "$ne", Value: true}}},
+		{Key: "status", Value: "Released"},
+		{Key: "poster_path", Value: bson.D{
+			{Key: "$type", Value: "string"},
+			{Key: "$ne", Value: ""},
+		}},
+		{Key: "vote_average", Value: bson.D{{Key: "$gt", Value: 0}}},
+	}
+
+	// C is the catalogue's mean rating. It anchors titles with fewer votes
+	// toward a realistic baseline instead of trusting their raw rating alone.
+	baselinePipeline := mongo.Pipeline{
+		{{Key: "$match", Value: append(append(bson.D{}, baseFilter...), bson.E{Key: "vote_count", Value: bson.D{{Key: "$gt", Value: 0}}})}},
+		{{Key: "$group", Value: bson.D{{Key: "_id", Value: nil}, {Key: "average", Value: bson.D{{Key: "$avg", Value: "$vote_average"}}}}}},
+	}
+	baselineCursor, err := r.db.Collection("movie").Aggregate(ctx, baselinePipeline)
+	if err != nil {
+		return nil, fmt.Errorf("movie: calculate top rated baseline: %w", err)
+	}
+	defer baselineCursor.Close(ctx)
+
+	baseline := topRatedFallbackAverage
+	if baselineCursor.Next(ctx) {
+		var result struct {
+			Average float64 `bson:"average"`
+		}
+		if err := baselineCursor.Decode(&result); err != nil {
+			return nil, fmt.Errorf("movie: decode top rated baseline: %w", err)
+		}
+		if result.Average > 0 {
+			baseline = result.Average
+		}
+	}
+	if err := baselineCursor.Err(); err != nil {
+		return nil, fmt.Errorf("movie: iterate top rated baseline: %w", err)
+	}
+
+	filter := append(append(bson.D{}, baseFilter...), bson.E{Key: "vote_count", Value: bson.D{{Key: "$gt", Value: topRatedMinimumVotes}}})
+	voteDenominator := bson.D{{Key: "$add", Value: bson.A{"$vote_count", topRatedMinimumVotes}}}
+	weightedScore := bson.D{{Key: "$add", Value: bson.A{
+		bson.D{{Key: "$multiply", Value: bson.A{
+			bson.D{{Key: "$divide", Value: bson.A{"$vote_count", voteDenominator}}},
+			"$vote_average",
+		}}},
+		bson.D{{Key: "$multiply", Value: bson.A{
+			bson.D{{Key: "$divide", Value: bson.A{topRatedMinimumVotes, voteDenominator}}},
+			baseline,
+		}}},
+	}}}
+	pipeline := mongo.Pipeline{
+		{{Key: "$match", Value: filter}},
+		{{Key: "$set", Value: bson.D{{Key: "weighted_score", Value: weightedScore}}}},
+		{{Key: "$sort", Value: bson.D{
+			{Key: "weighted_score", Value: -1},
+			{Key: "vote_count", Value: -1},
+			{Key: "popularity", Value: -1},
+			{Key: "id", Value: 1},
+		}}},
+		{{Key: "$limit", Value: int64(limit)}},
+		{{Key: "$project", Value: bson.D{{Key: "_id", Value: 0}, {Key: "id", Value: 1}}}},
+	}
+	cursor, err := r.db.Collection("movie").Aggregate(ctx, pipeline)
+	if err != nil {
+		return nil, fmt.Errorf("movie: aggregate top rated ids: %w", err)
+	}
+	defer cursor.Close(ctx)
+
+	ids := make([]int64, 0, limit)
+	for cursor.Next(ctx) {
+		var item struct {
+			ID int64 `bson:"id"`
+		}
+		if err := cursor.Decode(&item); err != nil {
+			return nil, fmt.Errorf("movie: decode top rated id: %w", err)
+		}
+		ids = append(ids, item.ID)
+	}
+	if err := cursor.Err(); err != nil {
+		return nil, fmt.Errorf("movie: iterate top rated ids: %w", err)
+	}
+	return ids, nil
 }
 
 // FindTrackedIDs returns the requested IDs that appear in at least one user's movie list.

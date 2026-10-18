@@ -38,6 +38,7 @@ const recommendationCandidateLimit = 300
 const heroResultLimit = 20
 const heroMaxPages = 25
 const waitingNextEpisodeResultLimit = 20
+const topRatedResultLimit = 20
 
 type TVAffinity struct {
 	Genres              map[int64]int
@@ -120,6 +121,16 @@ func (s *TVService) Discover(ctx context.Context, userID string, q DiscoverQuery
 		return nil, 0, err
 	}
 	return results, total, nil
+}
+
+// TopRated returns a fixed rail of scripted series with a sufficiently large
+// voting sample, ordered by their weighted rating.
+func (s *TVService) TopRated(ctx context.Context) ([]TVResponse, error) {
+	ids, err := s.repo.TopRatedIDs(ctx, topRatedResultLimit)
+	if err != nil {
+		return nil, fmt.Errorf("tv service: top rated ids: %w", err)
+	}
+	return s.GetByIDs(ctx, ids)
 }
 
 // Recommendations returns unwatched TV series ranked from the user's rated
