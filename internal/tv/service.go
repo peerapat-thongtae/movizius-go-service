@@ -782,6 +782,29 @@ func (s *TVService) UpsertTVState(ctx context.Context, userID string, req Upsert
 	if req.Rating != nil && (*req.Rating < 0 || *req.Rating > 10) {
 		return fmt.Errorf("tv service: invalid rating %v", *req.Rating)
 	}
+	if req.Rating != nil && req.Status != "watched" {
+		return fmt.Errorf("tv service: rating requires watched status")
+	}
+	// A rating edit after the show has already been completed must not recreate
+	// episode_watched with a new timestamp. Besides losing watch history, that
+	// would incorrectly move the title in "recently watched" and stats ranges.
+	if req.Rating != nil {
+		states, err := s.repo.GetStatesByUserID(ctx, userID)
+		if err != nil {
+			return fmt.Errorf("tv service: get states before rating update: %w", err)
+		}
+		for _, state := range states {
+			if state.TVID == req.ID && state.AccountStatus == "watched" {
+				if err := s.repo.UpsertTVState(ctx, userID, req.ID, nil, req.Rating); err != nil {
+					return err
+				}
+				if s.recommendation != nil {
+					s.recommendation.ApplyTVStateChange(ctx, userID, req.ID)
+				}
+				return nil
+			}
+		}
+	}
 
 	if req.Status == "watchlist" {
 		if err := s.repo.UpsertTVState(ctx, userID, req.ID, nil, req.Rating); err != nil {
