@@ -23,6 +23,8 @@ const (
 
 var deniedKeywordIDs = []int64{
 	9817,
+	5970,
+	191498,
 }
 
 func hasDeniedKeyword(keywords *KeywordsWrapper) bool {
