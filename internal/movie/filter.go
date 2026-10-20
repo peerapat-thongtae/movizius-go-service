@@ -28,8 +28,10 @@ var deniedKeywordIDs = []int64{
 }
 
 func hasDeniedKeyword(keywords *KeywordsWrapper) bool {
-	if keywords == nil {
-		return false
+	// A catalog title without keywords is too sparsely classified to surface.
+	// Treat it as denied just like an explicitly blocked keyword.
+	if keywords == nil || len(keywords.Keywords) == 0 {
+		return true
 	}
 	for _, keyword := range keywords.Keywords {
 		for _, deniedID := range deniedKeywordIDs {

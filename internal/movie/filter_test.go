@@ -8,7 +8,8 @@ func TestHasDeniedKeyword(t *testing.T) {
 		keywords *KeywordsWrapper
 		want     bool
 	}{
-		{name: "nil", keywords: nil, want: false},
+		{name: "nil", keywords: nil, want: true},
+		{name: "empty", keywords: &KeywordsWrapper{}, want: true},
 		{name: "other keyword", keywords: &KeywordsWrapper{Keywords: []Keyword{{ID: 1}}}, want: false},
 		{name: "denied keyword", keywords: &KeywordsWrapper{Keywords: []Keyword{{ID: deniedKeywordIDs[0]}}}, want: true},
 	}

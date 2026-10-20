@@ -24,6 +24,8 @@ const (
 	minimumPopularityForVoteOverride    = 2
 	minimumVotesToRetainLowPopularityTV = 500
 	minimumThaiTVPopularity             = 0.7
+	minimumPlannedTVPopularity          = 10
+	minimumInProductionTVPopularity     = 4
 )
 
 var deniedKeywordIDs = []int64{
@@ -33,8 +35,10 @@ var deniedKeywordIDs = []int64{
 }
 
 func hasDeniedKeyword(keywords *TVKeywordsWrapper) bool {
-	if keywords == nil {
-		return false
+	// A catalog title without keywords is too sparsely classified to surface.
+	// Treat it as denied just like an explicitly blocked keyword.
+	if keywords == nil || len(keywords.Results) == 0 {
+		return true
 	}
 	for _, keyword := range keywords.Results {
 		for _, deniedID := range deniedKeywordIDs {
@@ -85,12 +89,9 @@ func acceptableTV(adult bool, typ, lang, status string, popularity float64, vote
 	if status == "Rumored" {
 		return false
 	}
-	// Retain Thai series even when TMDB metadata is sparse, provided they have
-	// a minimal popularity signal. Type and safety/status checks still apply.
-	if lang == "th" {
-		return popularity > minimumThaiTVPopularity
-	}
-	if posterPath == "" && !earlyStageStatuses[status] {
+	// A poster is required even for upcoming shows. Otherwise TMDB's large set
+	// of early placeholders produces low-quality catalog cards.
+	if posterPath == "" {
 		return false
 	}
 	if !availableLanguages[lang] {
@@ -104,8 +105,16 @@ func acceptableTV(adult bool, typ, lang, status string, popularity float64, vote
 			return false
 		}
 	}
+	// Retain Thai series with a lower threshold, but only after the common
+	// quality checks above have passed.
+	if lang == "th" {
+		return popularity > minimumThaiTVPopularity
+	}
+	if status == "Planned" {
+		return popularity >= minimumPlannedTVPopularity
+	}
 	if earlyStageStatuses[status] {
-		return true
+		return popularity >= minimumInProductionTVPopularity
 	}
 	if popularity > minimumTVPopularity {
 		return true

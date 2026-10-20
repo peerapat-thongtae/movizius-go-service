@@ -54,9 +54,10 @@ func (s *MovieSyncService) Sync(ctx context.Context, ids []int64, skipAcceptable
 				}
 				return
 			}
-			// This TMDB keyword is denied regardless of catalog acceptability,
-			// explicit skip flags, or whether a user tracks the title.
-			if hasDeniedKeyword(detail.Keywords) {
+			_, isTracked := trackedIDs[movieID]
+			// Sparse or denied keywords keep untracked titles out of the catalog,
+			// but never remove a title a user explicitly chose to track.
+			if !isTracked && hasDeniedKeyword(detail.Keywords) {
 				if err := s.repo.DeleteByTMDBID(ctx, movieID); err != nil {
 					errs[idx] = fmt.Errorf("delete denied movie %d: %w", movieID, err)
 				}
@@ -65,7 +66,6 @@ func (s *MovieSyncService) Sync(ctx context.Context, ids []int64, skipAcceptable
 			if detail.ImdbID == "" && detail.ExternalIDs != nil {
 				detail.ImdbID = detail.ExternalIDs.ImdbID
 			}
-			_, isTracked := trackedIDs[movieID]
 			if !skipAcceptable && !isTracked && !isAcceptableMovie(detail) {
 				return
 			}
