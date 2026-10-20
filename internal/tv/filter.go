@@ -26,6 +26,24 @@ const (
 	minimumThaiTVPopularity             = 0.7
 )
 
+var deniedKeywordIDs = []int64{
+	9817,
+}
+
+func hasDeniedKeyword(keywords *TVKeywordsWrapper) bool {
+	if keywords == nil {
+		return false
+	}
+	for _, keyword := range keywords.Results {
+		for _, deniedID := range deniedKeywordIDs {
+			if keyword.ID == deniedID {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 func isAcceptableTV(detail TVResponse) bool {
 	genreIDs := make([]int64, 0, len(detail.Genres))
 	for _, g := range detail.Genres {

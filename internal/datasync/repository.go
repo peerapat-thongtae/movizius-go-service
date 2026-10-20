@@ -14,13 +14,16 @@ import (
 type SyncRepository interface {
 	CreateSyncMeta(ctx context.Context, meta SyncMeta) error
 	GetSyncMeta(ctx context.Context, syncKey string) (*SyncMeta, error)
+	ListSyncMeta(ctx context.Context) ([]SyncMeta, error)
 	UpdateSyncMeta(ctx context.Context, syncKey string, metaUpdate bson.M, status string, syncDate *time.Time) error
 	CountMovieIDs(ctx context.Context) (int, error)
 	CountMovieIDsUpdatedBefore(ctx context.Context, before time.Time) (int, error)
 	CountTVIDs(ctx context.Context) (int, error)
+	CountTVIDsUpdatedBefore(ctx context.Context, before time.Time) (int, error)
 	GetMovieIDsPage(ctx context.Context, offset, limit int) ([]int64, error)
 	GetMovieIDsUpdatedBefore(ctx context.Context, before time.Time, afterID int64, limit int) ([]int64, error)
 	GetTVIDsPage(ctx context.Context, offset, limit int) ([]int64, error)
+	GetTVIDsUpdatedBefore(ctx context.Context, before time.Time, afterID int64, limit int) ([]int64, error)
 }
 
 type mongoSyncRepository struct {
@@ -47,6 +50,20 @@ func (r *mongoSyncRepository) GetSyncMeta(ctx context.Context, syncKey string) (
 		return nil, fmt.Errorf("datasync: get sync_meta %q: %w", syncKey, err)
 	}
 	return &meta, nil
+}
+
+func (r *mongoSyncRepository) ListSyncMeta(ctx context.Context) ([]SyncMeta, error) {
+	cursor, err := r.db.Collection("sync_meta").Find(ctx, bson.M{}, options.Find().SetSort(bson.D{{Key: "updated_at", Value: -1}}))
+	if err != nil {
+		return nil, fmt.Errorf("datasync: list sync metadata: %w", err)
+	}
+	defer cursor.Close(ctx)
+
+	var items []SyncMeta
+	if err := cursor.All(ctx, &items); err != nil {
+		return nil, fmt.Errorf("datasync: decode sync metadata: %w", err)
+	}
+	return items, nil
 }
 
 func (r *mongoSyncRepository) UpdateSyncMeta(ctx context.Context, syncKey string, metaUpdate bson.M, status string, syncDate *time.Time) error {
@@ -86,6 +103,14 @@ func (r *mongoSyncRepository) CountTVIDs(ctx context.Context) (int, error) {
 	return countDocs(ctx, r.db.Collection("tv_user"))
 }
 
+func (r *mongoSyncRepository) CountTVIDsUpdatedBefore(ctx context.Context, before time.Time) (int, error) {
+	n, err := r.db.Collection("tv").CountDocuments(ctx, bson.M{"updated_at": bson.M{"$lt": before}})
+	if err != nil {
+		return 0, fmt.Errorf("datasync: count stale TV catalog: %w", err)
+	}
+	return int(n), nil
+}
+
 func (r *mongoSyncRepository) GetMovieIDsPage(ctx context.Context, offset, limit int) ([]int64, error) {
 	return getIDsPage(ctx, r.db.Collection("movie_user"), offset, limit)
 }
@@ -94,6 +119,10 @@ func (r *mongoSyncRepository) GetMovieIDsPage(ctx context.Context, offset, limit
 // catalog. Cursor paging is required because successful syncs update updated_at and
 // would make offset paging skip documents from the shrinking result set.
 func (r *mongoSyncRepository) GetMovieIDsUpdatedBefore(ctx context.Context, before time.Time, afterID int64, limit int) ([]int64, error) {
+	return getIDsUpdatedBefore(ctx, r.db.Collection("movie"), before, afterID, limit)
+}
+
+func getIDsUpdatedBefore(ctx context.Context, coll *mongo.Collection, before time.Time, afterID int64, limit int) ([]int64, error) {
 	filter := bson.M{
 		"updated_at": bson.M{"$lt": before},
 		"id":         bson.M{"$gt": afterID},
@@ -102,9 +131,9 @@ func (r *mongoSyncRepository) GetMovieIDsUpdatedBefore(ctx context.Context, befo
 		SetLimit(int64(limit)).
 		SetSort(bson.D{{Key: "id", Value: 1}}).
 		SetProjection(bson.M{"_id": 0, "id": 1})
-	cursor, err := r.db.Collection("movie").Find(ctx, filter, opts)
+	cursor, err := coll.Find(ctx, filter, opts)
 	if err != nil {
-		return nil, fmt.Errorf("datasync: stale movie catalog page: %w", err)
+		return nil, fmt.Errorf("datasync: stale %s catalog page: %w", coll.Name(), err)
 	}
 	defer cursor.Close(ctx)
 
@@ -112,7 +141,7 @@ func (r *mongoSyncRepository) GetMovieIDsUpdatedBefore(ctx context.Context, befo
 		ID int64 `bson:"id"`
 	}
 	if err := cursor.All(ctx, &docs); err != nil {
-		return nil, fmt.Errorf("datasync: decode stale movie catalog page: %w", err)
+		return nil, fmt.Errorf("datasync: decode stale %s catalog page: %w", coll.Name(), err)
 	}
 	ids := make([]int64, len(docs))
 	for i, doc := range docs {
@@ -123,6 +152,10 @@ func (r *mongoSyncRepository) GetMovieIDsUpdatedBefore(ctx context.Context, befo
 
 func (r *mongoSyncRepository) GetTVIDsPage(ctx context.Context, offset, limit int) ([]int64, error) {
 	return getIDsPage(ctx, r.db.Collection("tv_user"), offset, limit)
+}
+
+func (r *mongoSyncRepository) GetTVIDsUpdatedBefore(ctx context.Context, before time.Time, afterID int64, limit int) ([]int64, error) {
+	return getIDsUpdatedBefore(ctx, r.db.Collection("tv"), before, afterID, limit)
 }
 
 func countDocs(ctx context.Context, coll *mongo.Collection) (int, error) {

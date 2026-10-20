@@ -59,6 +59,14 @@ func (s *TVSyncService) Sync(ctx context.Context, ids []int64, skipAcceptable bo
 				}
 				return
 			}
+			// This TMDB keyword is denied regardless of catalog acceptability,
+			// explicit skip flags, or whether a user tracks the series.
+			if hasDeniedKeyword(detail.Keywords) {
+				if err := s.repo.DeleteByTMDBID(ctx, tvID); err != nil {
+					errs[idx] = fmt.Errorf("delete denied tv %d: %w", tvID, err)
+				}
+				return
+			}
 			if detail.ImdbID == "" && detail.ExternalIDs != nil {
 				detail.ImdbID = detail.ExternalIDs.ImdbID
 			}

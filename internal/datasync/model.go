@@ -47,3 +47,16 @@ type SyncResult struct {
 	Status     string     `json:"status"`
 	NextSyncAt *time.Time `json:"next_sync_at,omitempty"`
 }
+
+// SyncOverviewItem is the persisted state of a resumable sync job.
+type SyncOverviewItem struct {
+	SyncKey   string     `json:"sync_key"`
+	Source    string     `json:"source"`
+	MediaType string     `json:"media_type"`
+	Status    string     `json:"status"`
+	Total     int        `json:"total"`
+	Processed int        `json:"processed"`
+	Remaining int        `json:"remaining"`
+	SyncDate  *time.Time `json:"sync_date,omitempty"`
+	UpdatedAt time.Time  `json:"updated_at"`
+}

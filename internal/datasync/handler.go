@@ -28,8 +28,10 @@ func NewHandler(service *SyncService, log *slog.Logger) *Handler {
 
 // RegisterRoutes registers sync endpoints on the provided mux.
 func (h *Handler) RegisterRoutes(mux *http.ServeMux, auth func(http.Handler) http.Handler) {
+	mux.HandleFunc("GET /sync/summary", h.GetSyncOverview)
 	mux.HandleFunc("POST /sync/movie/by-ids", h.SyncMovieByIDs)
 	mux.HandleFunc("POST /sync/movie/catalog", h.SyncMovieCatalog)
+	mux.HandleFunc("POST /sync/tv/catalog", h.SyncTVCatalog)
 	mux.HandleFunc("POST /sync/tv/by-ids", h.SyncTVByIDs)
 	mux.HandleFunc("POST /sync/movie/tracked", h.SyncMovieUserTracked)
 	mux.HandleFunc("POST /sync/tv/tracked", h.SyncTVUserTracked)
@@ -42,11 +44,39 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux, auth func(http.Handler) htt
 	mux.HandleFunc("POST /sync/tv/prune-unacceptable", h.PruneUnacceptableTV)
 }
 
+// GetSyncOverview returns persisted state for resumable catalog sync jobs.
+func (h *Handler) GetSyncOverview(w http.ResponseWriter, r *http.Request) {
+	items, err := h.service.SyncOverview(r.Context())
+	if err != nil {
+		h.log.Error("failed to get sync overview", "error", err)
+		response.Error(w, http.StatusInternalServerError, "failed to get sync overview")
+		return
+	}
+	response.Success(w, http.StatusOK, map[string]any{"jobs": items})
+}
+
 // SyncMovieCatalog refreshes one chunk of movies whose cached metadata is older
 // than older_than_days (default 15). Calls resume from the stored cursor until
 // the job is complete. limit controls the number of TMDB detail requests here.
 func (h *Handler) SyncMovieCatalog(w http.ResponseWriter, r *http.Request) {
 	result, err := h.service.SyncMovieCatalog(
+		r.Context(),
+		parseOlderThanDays(r),
+		parseLimit(r),
+		parseSkipAcceptable(r),
+		parseForce(r),
+	)
+	if err != nil {
+		h.log.Error("sync operation failed", "error", err, "path", r.URL.Path)
+		response.Error(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	response.Success(w, http.StatusOK, result)
+}
+
+// SyncTVCatalog refreshes one chunk of TV series whose metadata is stale.
+func (h *Handler) SyncTVCatalog(w http.ResponseWriter, r *http.Request) {
+	result, err := h.service.SyncTVCatalog(
 		r.Context(),
 		parseOlderThanDays(r),
 		parseLimit(r),

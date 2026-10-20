@@ -21,6 +21,24 @@ const (
 	minimumVotesToRetainLowPopularityMovie = 500
 )
 
+var deniedKeywordIDs = []int64{
+	9817,
+}
+
+func hasDeniedKeyword(keywords *KeywordsWrapper) bool {
+	if keywords == nil {
+		return false
+	}
+	for _, keyword := range keywords.Keywords {
+		for _, deniedID := range deniedKeywordIDs {
+			if keyword.ID == deniedID {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 func isAcceptableMovie(detail MovieResponse) bool {
 	genreIDs := make([]int64, 0, len(detail.Genres))
 	for _, g := range detail.Genres {

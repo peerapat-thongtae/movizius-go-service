@@ -29,6 +29,31 @@ func NewService(repo SyncRepository, movieSync *movie.MovieSyncService, tvSync *
 	return &SyncService{repo: repo, movieSync: movieSync, tvSync: tvSync, tmdb: tmdbClient, tvmaze: tvmazeClient}
 }
 
+// SyncOverview returns the persisted progress and most recent completion time
+// for resumable sync jobs. One-off ID syncs and TVMaze schedule syncs do not
+// persist job metadata, so they are intentionally absent.
+func (s *SyncService) SyncOverview(ctx context.Context) ([]SyncOverviewItem, error) {
+	meta, err := s.repo.ListSyncMeta(ctx)
+	if err != nil {
+		return nil, err
+	}
+	items := make([]SyncOverviewItem, 0, len(meta))
+	for _, item := range meta {
+		total := int(toInt64(item.Meta["total"]))
+		processed := int(toInt64(item.Meta["processed"]))
+		remaining := total - processed
+		if remaining < 0 {
+			remaining = 0
+		}
+		items = append(items, SyncOverviewItem{
+			SyncKey: item.SyncKey, Source: item.Source, MediaType: item.MediaType,
+			Status: item.Status, Total: total, Processed: processed,
+			Remaining: remaining, SyncDate: item.SyncDate, UpdatedAt: item.UpdatedAt,
+		})
+	}
+	return items, nil
+}
+
 // SyncByIDs syncs TMDB metadata for the given list of IDs directly.
 func (s *SyncService) SyncByIDs(ctx context.Context, mediaType string, ids []int64, skipAcceptable bool) (*SyncResult, error) {
 	var err error
@@ -55,7 +80,16 @@ func (s *SyncService) SyncByIDs(ctx context.Context, mediaType string, ids []int
 // updated_at is older than olderThanDays. It persists a fixed cutoff and cursor
 // so calls can resume safely while refreshed documents leave the stale set.
 func (s *SyncService) SyncMovieCatalog(ctx context.Context, olderThanDays, limit int, skipAcceptable, force bool) (*SyncResult, error) {
-	const syncKey = "sync_movie_catalog_stale"
+	return s.syncCatalogStale(ctx, "movie", "sync_movie_catalog_stale", olderThanDays, limit, skipAcceptable, force)
+}
+
+// SyncTVCatalog refreshes one cursor-paged chunk of TV metadata whose cached
+// metadata is older than olderThanDays.
+func (s *SyncService) SyncTVCatalog(ctx context.Context, olderThanDays, limit int, skipAcceptable, force bool) (*SyncResult, error) {
+	return s.syncCatalogStale(ctx, "tv", "sync_tv_catalog_stale", olderThanDays, limit, skipAcceptable, force)
+}
+
+func (s *SyncService) syncCatalogStale(ctx context.Context, mediaType, syncKey string, olderThanDays, limit int, skipAcceptable, force bool) (*SyncResult, error) {
 
 	meta, err := s.repo.GetSyncMeta(ctx, syncKey)
 	if err != nil && !isNotFound(err) {
@@ -64,7 +98,12 @@ func (s *SyncService) SyncMovieCatalog(ctx context.Context, olderThanDays, limit
 	metaMissing := isNotFound(err)
 	if metaMissing || meta.Status == StatusCompleted || force {
 		cutoff := time.Now().UTC().AddDate(0, 0, -olderThanDays)
-		total, err := s.repo.CountMovieIDsUpdatedBefore(ctx, cutoff)
+		var total int
+		if mediaType == "movie" {
+			total, err = s.repo.CountMovieIDsUpdatedBefore(ctx, cutoff)
+		} else {
+			total, err = s.repo.CountTVIDsUpdatedBefore(ctx, cutoff)
+		}
 		if err != nil {
 			return nil, err
 		}
@@ -80,7 +119,7 @@ func (s *SyncService) SyncMovieCatalog(ctx context.Context, olderThanDays, limit
 			meta = &SyncMeta{
 				SyncKey:   syncKey,
 				Source:    SourceCatalogStale,
-				MediaType: "movie",
+				MediaType: mediaType,
 				Status:    StatusInProgress,
 				Meta:      resetMeta,
 				CreatedAt: now,
@@ -102,11 +141,16 @@ func (s *SyncService) SyncMovieCatalog(ctx context.Context, olderThanDays, limit
 	total := int(toInt64(meta.Meta["total"]))
 	cutoff := time.Unix(toInt64(meta.Meta["cutoff_unix"]), 0).UTC()
 
-	chunk, err := s.repo.GetMovieIDsUpdatedBefore(ctx, cutoff, afterID, limit)
+	var chunk []int64
+	if mediaType == "movie" {
+		chunk, err = s.repo.GetMovieIDsUpdatedBefore(ctx, cutoff, afterID, limit)
+	} else {
+		chunk, err = s.repo.GetTVIDsUpdatedBefore(ctx, cutoff, afterID, limit)
+	}
 	if err != nil {
 		return nil, err
 	}
-	if err := s.movieSync.Sync(ctx, chunk, skipAcceptable); err != nil {
+	if err := s.syncChunk(ctx, mediaType, chunk, skipAcceptable); err != nil {
 		return nil, err
 	}
 
