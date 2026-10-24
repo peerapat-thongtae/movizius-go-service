@@ -75,6 +75,7 @@ type TVResponse struct {
 	VoteAverage         float64               `bson:"vote_average"           json:"vote_average"`
 	VoteCount           int64                 `bson:"vote_count"             json:"vote_count"`
 	Credits             *Credits              `bson:"credits"                json:"credits"`
+	SeasonOneCredits    *Credits              `bson:"-"                      json:"season_one_credits,omitempty"`
 	ExternalIDs         *ExternalIDs          `bson:"external_ids"           json:"external_ids"`
 	Videos              *Videos               `bson:"videos"                 json:"videos"`
 	MediaType           string                `bson:"media_type"             json:"media_type,omitempty"`

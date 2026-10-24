@@ -685,6 +685,13 @@ func (s *TVService) GetByID(ctx context.Context, id int64) (*TVResponse, error) 
 	if err := s.tmdb.GetTVDetail(ctx, id, detailAppendToResponse, &detail); err != nil {
 		return nil, fmt.Errorf("tv service: get by id %d: %w", id, err)
 	}
+	// Series-level credits reveal actors introduced in later seasons. Prefer a
+	// Season 1 cast for the detail page, but preserve the series credits as a
+	// fallback when TMDB does not have seasonal credits for this title.
+	var seasonOneCredits Credits
+	if err := s.tmdb.GetTVSeasonCredits(ctx, id, 1, &seasonOneCredits); err == nil && len(seasonOneCredits.Cast) > 0 {
+		detail.SeasonOneCredits = &seasonOneCredits
+	}
 	detail.MediaType = "tv"
 	if detail.ImdbID == "" && detail.ExternalIDs != nil {
 		detail.ImdbID = detail.ExternalIDs.ImdbID

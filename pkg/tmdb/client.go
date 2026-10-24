@@ -121,6 +121,37 @@ func (c *Client) GetTVSeason(ctx context.Context, tvID int64, season int, target
 	return nil
 }
 
+// GetTVSeasonCredits fetches credits scoped to one TV season. This is useful
+// for spoiler-safe casts because series-level credits can include actors who
+// only appear in later seasons.
+func (c *Client) GetTVSeasonCredits(ctx context.Context, tvID int64, season int, target any) error {
+	url := fmt.Sprintf("%s/tv/%d/season/%d/credits?language=en-US", baseURL, tvID, season)
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return fmt.Errorf("tmdb: build request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+c.accessToken)
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return fmt.Errorf("tmdb: request /tv/%d/season/%d/credits: %w", tvID, season, err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusNotFound {
+		return fmt.Errorf("tmdb: /tv/%d/season/%d/credits: %w", tvID, season, ErrNotFound)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("tmdb: /tv/%d/season/%d/credits returned status %d", tvID, season, resp.StatusCode)
+	}
+	if err := json.NewDecoder(resp.Body).Decode(target); err != nil {
+		return fmt.Errorf("tmdb: decode /tv/%d/season/%d/credits: %w", tvID, season, err)
+	}
+	return nil
+}
+
 // GetTVEpisode fetches /tv/{id}/season/{season}/episode/{episode} from TMDB.
 func (c *Client) GetTVEpisode(ctx context.Context, tvID int64, season, episode int, target any) error {
 	url := fmt.Sprintf("%s/tv/%d/season/%d/episode/%d?language=en-US", baseURL, tvID, season, episode)
